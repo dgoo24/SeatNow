@@ -12,7 +12,8 @@ import streamlit as st
 
 from seatnow import inventory, store
 from seatnow.loader import load_feed
-from seatnow.ui import init_state, render_sidebar
+from seatnow.theme import footer_html, header_html, inject
+from seatnow.ui import current_user, init_state, render_sidebar
 
 st.set_page_config(
     page_title="SeatNow · Sitzplatz buchen",
@@ -31,7 +32,13 @@ if time.time() - st.session_state.get("_last_sweep", 0) > 30:
     inventory.sweep_expired_holds()
     inventory.sweep_no_show(feed)
 
+# Estilo del dashboard (backend/public/index.html).
+inject()
+
 render_sidebar(feed)
+
+# Barra superior con la marca y los badges del servicio.
+st.html(header_html(feed, current_user()))
 
 navigation = st.navigation(
     [
@@ -42,3 +49,5 @@ navigation = st.navigation(
     ]
 )
 navigation.run()
+
+st.html(footer_html())

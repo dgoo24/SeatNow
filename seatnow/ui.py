@@ -1,8 +1,10 @@
-"""Componentes de interfaz reutilizables."""
+"""Componentes de interfaz reutilizables (puerto visual de `index.html`)."""
 
 from __future__ import annotations
 
+import time
 from datetime import date
+from html import escape
 from typing import Any
 
 import streamlit as st
@@ -11,7 +13,6 @@ from seatnow import gtfs, inventory, realtime, store
 from seatnow.config import CAR_COUNT, SEATS_PER_CAR
 from seatnow.format import (
     fmt_clock,
-    fmt_duration,
     fmt_money,
     local_now,
     local_today,
@@ -19,10 +20,18 @@ from seatnow.format import (
     status_label,
     train_label,
 )
+from seatnow.theme import (
+    chips_html,
+    legend_html,
+    live_box_html,
+    seat_css,
+)
 
 SELECTED_SEAT_KEY = "selected_seat_id"
 SELECTED_TRIP_KEY = "selected_trip_id"
 SELECTED_SEGMENT_KEY = "selected_segment_id"
+WAGEN_DEADLINE_KEY = "wagen_deadline"
+WAGEN_MAX_SECONDS = 180
 
 
 # --------------------------------------------------------------------------- #
@@ -36,6 +45,7 @@ def init_state() -> None:
     st.session_state.setdefault(SELECTED_SEAT_KEY, None)
     st.session_state.setdefault("search_results", [])
     st.session_state.setdefault("search_params", None)
+    st.session_state.setdefault(WAGEN_DEADLINE_KEY, None)
 
 
 def current_user() -> dict[str, Any] | None:
@@ -58,7 +68,10 @@ def require_user() -> dict[str, Any]:
     user = current_user()
     if user is None:
         st.warning("Bitte melde dich an, um eine Reservierung anzulegen.", icon=":material/login:")
-        st.caption("Demo-Konten: `pasajero1@trenes.local` · `demo1234` — Admin: `admin@trenes.local` · `admin1234`")
+        st.caption(
+            "Demo-Konten: `pasajero1@trenes.local` · `demo1234` — "
+            "Admin: `admin@trenes.local` · `admin1234`"
+        )
         st.stop()
     return user
 
@@ -72,7 +85,7 @@ def require_admin() -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Cabecera y badges
+# Barra lateral
 # --------------------------------------------------------------------------- #
 
 def render_sidebar(feed: gtfs.Feed) -> None:
@@ -89,7 +102,9 @@ def render_sidebar(feed: gtfs.Feed) -> None:
                 st.rerun()
         else:
             with st.expander("Anmelden / registrieren", icon=":material/login:"):
-                email = st.text_input("E-Mail", key="auth_email", placeholder="pasajero1@trenes.local")
+                email = st.text_input(
+                    "E-Mail", key="auth_email", placeholder="pasajero1@trenes.local"
+                )
                 password = st.text_input("Passwort", type="password", key="auth_password")
                 with st.container(horizontal=True):
                     if st.button("Anmelden", icon=":material/login:", width="stretch"):
@@ -108,47 +123,71 @@ def render_sidebar(feed: gtfs.Feed) -> None:
         st.space("small")
         st.markdown("**Bestand**")
         seats = len(feed.trips) and CAR_COUNT * SEATS_PER_CAR
-        st.caption(f"{len(feed.trips)} Züge · {len(feed.segments)} Teilstrecken · {seats} Sitzplätze/Zug")
+        st.caption(
+            f"{len(feed.trips)} Züge · {len(feed.segments)} Teilstrecken · {seats} Sitzplätze/Zug"
+        )
         st.caption("Zahlung: mock · E-Mail: deaktiviert")
         st.caption(f"Stand: {local_now():%d.%m.%Y %H:%M}")
 
 
-def render_trip_header(trip: gtfs.Trip, segment: gtfs.Segment) -> None:
+# --------------------------------------------------------------------------- #
+# Vista de viaje
+# --------------------------------------------------------------------------- #
+
+def trip_header_html(trip: gtfs.Trip, segment: gtfs.Segment) -> str:
     label = train_label(trip.route_name)
-    st.markdown(f"#### {label} · {trip.route_name}")
-    cols = st.columns(4)
-    cols[0].metric("Abfahrt", fmt_clock(segment.departure))
-    cols[1].metric("Ankunft", fmt_clock(segment.arrival))
-    cols[2].metric("Dauer", fmt_duration(segment.duration_minutes))
-    cols[3].metric("Entfernung", f"{segment.distance_km:.0f} km")
+    return (
+        '<div class="sn-trip-top"><div>'
+        '<p class="sn-card-title">Wagenansicht · Teilstrecke</p>'
+        f'<h2 class="sn-trip-title">{escape(label)} · {escape(trip.route_name)}</h2>'
+        f'<div class="sn-trip-meta">Abfahrt {escape(fmt_clock(segment.departure))} · '
+        f"Ankunft {escape(fmt_clock(segment.arrival))} · {len(trip.stops)} Halte</div>"
+        "</div></div>"
+    )
+
+
+def render_trip_header(trip: gtfs.Trip, segment: gtfs.Segment) -> None:
+    st.html(trip_header_html(trip, segment))
+
+
+@st.fragment(run_every=1.0)
+def render_countdown() -> None:
+    """Cuenta atrás de la vista de wagon (máx. 3 minutos, como en el HTML)."""
+    deadline = st.session_state.get(WAGEN_DEADLINE_KEY)
+    if not deadline:
+        return
+    remaining = max(int(deadline - time.time()), 0)
+    minutes, seconds = divmod(remaining, 60)
+    klass = "sn-countdown warn" if remaining <= 60 else "sn-countdown"
+    st.html(f'<div class="{klass}">{minutes}:{seconds:02d}</div>')
 
 
 def render_live_box(trip: gtfs.Trip, day: date) -> realtime.LiveStatus:
     status = realtime.live_status(trip, day)
-    icon = {
-        "error": ":material/cancel:",
-        "warning": ":material/schedule:",
-        "success": ":material/check_circle:",
-    }[status.severity]
-    with st.container(border=True):
-        cols = st.columns([3, 1, 1])
-        cols[0].markdown(f"{icon} **Live-Status** · {status.headline}")
-        cols[1].markdown(f"Gleis **{status.platform}** (plan {status.planned_platform})")
-        cols[2].markdown(f"Verspätung **{status.delay_minutes} Min.**")
-        st.caption(status.message)
+    next_stops = realtime.stop_delays(trip, day, status)[:6]
+    st.html(live_box_html(status, next_stops, fmt_clock(local_now().strftime("%H:%M:%S"))))
     return status
 
 
-def render_stops(trip: gtfs.Trip, segment: gtfs.Segment, status: realtime.LiveStatus | None = None) -> None:
-    delays = {row["name"]: row for row in (realtime.stop_delays(trip, local_today().date(), status) if status else [])}
-    chips = []
+def render_stops(
+    trip: gtfs.Trip, segment: gtfs.Segment, status: realtime.LiveStatus | None = None
+) -> None:
+    day = local_today().date()
+    delays = {
+        row["name"]: row
+        for row in (realtime.stop_delays(trip, day, status) if status else [])
+    }
+    items: list[tuple[str, bool]] = []
     for stop in trip.stops:
-        marker = "◀" if stop.sequence == segment.origin_sequence else ""
-        marker += "▶" if stop.sequence == segment.destination_sequence else ""
         delay = delays.get(stop.stop_name, {}).get("delay_minutes", 0)
         suffix = f" (+{delay})" if delay else ""
-        chips.append(f"{marker} **{stop.stop_name}** · {fmt_clock(stop.departure)}{suffix}")
-    st.markdown(" · ".join(chips))
+        focus = stop.stop_name in (segment.origin_stop, segment.destination_stop)
+        items.append((f"{stop.stop_name} {fmt_clock(stop.departure)}{suffix}", focus))
+    st.html(chips_html(items))
+
+
+def render_legend() -> None:
+    st.html(legend_html())
 
 
 # --------------------------------------------------------------------------- #
@@ -166,40 +205,42 @@ def render_seat_map(
     key_prefix: str = "seat",
 ) -> None:
     segment = feed.segments[segment_id]
+    statuses: dict[str, str] = {}
     for car in range(1, CAR_COUNT + 1):
-        with st.container(border=True):
-            st.markdown(f"**Wagen {car}**")
-            for row_start in range(0, SEATS_PER_CAR, 5):
-                cols = st.columns(5)
-                for offset in range(5):
-                    number = row_start + offset + 1
-                    seat_id = f"{segment.trip_id}:{car}:{number:02d}"
-                    info = state.get(seat_id, {"status": "AVAILABLE", "reservations": []})
-                    status = info["status"]
-                    if status == "HELD":
-                        icon, help_text = ":material/hourglass_top:", "Reserviert · Zahlung offen"
-                    elif status == "BOOKED":
-                        icon, help_text = ":material/lock:", "Gebucht"
-                    else:
-                        icon, help_text = None, "Frei"
-                    cols[offset].button(
-                        f"{number:02d}",
-                        key=f"{key_prefix}_{car}_{number}",
-                        icon=icon,
-                        type="primary" if status == "AVAILABLE" else "secondary",
-                        disabled=status != "AVAILABLE",
-                        width="stretch",
-                        help=help_text,
-                        on_click=_select_seat,
-                        args=(seat_id,),
-                    )
+        for number in range(1, SEATS_PER_CAR + 1):
+            seat_id = f"{segment.trip_id}:{car}:{number:02d}"
+            info = state.get(seat_id, {"status": "AVAILABLE", "reservations": []})
+            statuses[f"{key_prefix}_{car}_{number}"] = info["status"]
+    st.html(seat_css(statuses))
 
-
-def render_legend() -> None:
-    st.markdown(
-        ":blue-badge[frei] :orange-badge[reserviert] :red-badge[belegt]",
-        help="Legende des Sitzplans",
-    )
+    for car in range(1, CAR_COUNT + 1):
+        with st.container(key=f"wagon_{car}"):
+            st.html(f'<div class="sn-wagon-head">Wagen {car}</div>')
+            with st.container(key=f"snseats_{car}"):
+                for row_start in range(0, SEATS_PER_CAR, 5):
+                    cols = st.columns(5, gap="small")
+                    for offset in range(5):
+                        number = row_start + offset + 1
+                        seat_id = f"{segment.trip_id}:{car}:{number:02d}"
+                        info = state.get(seat_id, {"status": "AVAILABLE", "reservations": []})
+                        status = info["status"]
+                        if status == "HELD":
+                            icon, help_text = ":material/hourglass_top:", "Reserviert · Zahlung offen"
+                        elif status == "BOOKED":
+                            icon, help_text = ":material/lock:", "Gebucht"
+                        else:
+                            icon, help_text = None, "Frei in dieser Teilstrecke"
+                        cols[offset].button(
+                            f"{number:02d}",
+                            key=f"{key_prefix}_{car}_{number}",
+                            icon=icon,
+                            type="secondary",
+                            disabled=status != "AVAILABLE",
+                            width="stretch",
+                            help=help_text,
+                            on_click=_select_seat,
+                            args=(seat_id,),
+                        )
 
 
 # --------------------------------------------------------------------------- #
@@ -226,16 +267,26 @@ def render_reservation_panel(
             return
 
         st.markdown("**Reservierung**")
-        cols = st.columns(3)
-        cols[0].metric("Sitzplatz", seat_label(seat_id))
-        cols[1].metric("Teilstrecke", f"{segment.origin_stop} → {segment.destination_stop}")
-        cols[2].metric("Preis", fmt_money(segment.price))
+        st.html(
+            '<div class="sn-kv"><b>Teilstrecke</b>'
+            f"<span>{escape(segment.origin_stop)} → {escape(segment.destination_stop)}</span></div>"
+            '<div class="sn-kv"><b>Zeit</b>'
+            f"<span>{escape(fmt_clock(segment.departure))} – {escape(fmt_clock(segment.arrival))}</span></div>"
+            '<div class="sn-kv"><b>Entfernung</b>'
+            f"<span>{segment.distance_km:.0f} km</span></div>"
+            '<div class="sn-kv"><b>Sitzpreis</b>'
+            f"<span>{escape(fmt_money(segment.price))}</span></div>"
+            '<div class="sn-kv"><b>Sitzplatz</b>'
+            f"<span>{escape(seat_label(seat_id))}</span></div>"
+        )
 
         if user is None:
             st.info("Zum Reservieren bitte anmelden.", icon=":material/login:")
             return
 
-        if st.button("Sitzplatz reservieren", type="primary", icon=":material/event_seat:", width="stretch"):
+        if st.button(
+            "Sitzplatz reservieren", type="primary", icon=":material/event_seat:", width="stretch"
+        ):
             try:
                 booking = inventory.hold_seat(
                     feed,
@@ -252,9 +303,7 @@ def render_reservation_panel(
                 st.toast("Sitzplatz reserviert · Zahlungsfrist läuft", icon=":material/check_circle:")
                 st.rerun()
 
-        st.caption(
-            "Der Platz wird für 3 Minuten gehalten. Ohne Zahlung wird er automatisch freigegeben."
-        )
+        st.caption("Der Platz wird für 3 Minuten gehalten. Ohne Zahlung wird er automatisch freigegeben.")
 
 
 def render_active_booking(feed: gtfs.Feed, user: dict[str, Any] | None) -> None:
@@ -329,6 +378,7 @@ def open_trip(trip_id: str, segment_id: str | None = None) -> None:
     st.session_state[SELECTED_SEAT_KEY] = None
     st.session_state[SELECTED_TRIP_KEY] = trip_id
     st.session_state[SELECTED_SEGMENT_KEY] = segment_id
+    st.session_state[WAGEN_DEADLINE_KEY] = time.time() + WAGEN_MAX_SECONDS
 
 
 def status_badge(status: str) -> str:

@@ -1,4 +1,4 @@
-"""Página 1 · búsqueda de conexiones."""
+"""Página 1 · búsqueda de conexiones (tarjeta "Verbindung suchen")."""
 
 from __future__ import annotations
 
@@ -10,12 +10,17 @@ from seatnow import inventory
 from seatnow.format import fmt_clock, fmt_duration, fmt_money, local_today
 from seatnow.loader import load_feed
 from seatnow.search import search_trains
+from seatnow.theme import (
+    card_head,
+    free_html,
+    hint_html,
+    route_html,
+    time_html,
+    train_kind_html,
+)
 from seatnow.ui import open_trip
 
 feed = load_feed()
-
-st.subheader("Verbindung suchen")
-st.caption("Suche eine Verbindung und öffne den Wagenplan, um einen Sitzplatz zu reservieren.")
 
 stop_options = ["", *feed.stop_names]
 today = local_today().date()
@@ -40,27 +45,39 @@ def _label(option: str) -> str:
     return option or "Beliebiger Bahnhof"
 
 
-cols = st.columns([3, 0.5, 3, 2])
-origin = cols[0].selectbox(
-    "Abfahrt ab", stop_options, key="search_origin", format_func=_label
-)
-cols[1].button("⇄", help="Abfahrt und Ankunft tauschen", on_click=_swap, key="swap_btn")
-destination = cols[2].selectbox(
-    "Ankunft nach", stop_options, key="search_destination", format_func=_label
-)
-day = cols[3].date_input("Datum", value=today, key="search_date")
+with st.container(border=True):
+    st.html(card_head("Verbindung suchen"))
 
-row = st.columns([2, 1.6, 1.6, 2.4])
-time_type = row[0].segmented_control(
-    "Zeittyp", ["Abfahrt ab", "Ankunft bis"], default="Abfahrt ab", key="search_time_type"
-)
-time_from = row[1].time_input("Von", value=None, key="search_time_from")
-time_to = row[2].time_input("Bis", value=None, key="search_time_to")
-with row[3]:
-    st.space("medium")
-    with st.container(horizontal=True):
-        clicked_search = st.button("Zug finden", type="primary", icon=":material/search:", key="search_btn")
-        st.button("Zufall", icon=":material/casino:", on_click=_random, key="random_btn")
+    cols = st.columns([3, 0.35, 3], vertical_alignment="bottom")
+    origin = cols[0].selectbox(
+        "Von", stop_options, key="search_origin", format_func=_label, placeholder="Startbahnhof"
+    )
+    cols[1].button("⇄", help="Abfahrt und Ankunft tauschen", on_click=_swap, key="swap_btn")
+    destination = cols[2].selectbox(
+        "Nach", stop_options, key="search_destination", format_func=_label, placeholder="Zielbahnhof"
+    )
+
+    meta = st.columns([1.5, 1.7, 1, 1])
+    day = meta[0].date_input("Datum", value=today, key="search_date")
+    time_type = meta[1].segmented_control(
+        "Zeitraum", ["Abfahrt ab", "Ankunft bis"], default="Abfahrt ab", key="search_time_type"
+    )
+    time_from = meta[2].time_input("Von", value=None, key="search_time_from")
+    time_to = meta[3].time_input("Bis", value=None, key="search_time_to")
+
+    actions = st.columns([1.4, 1.4, 3])
+    clicked_search = actions[0].button(
+        "Zug finden", type="primary", icon=":material/search:", key="search_btn", width="content"
+    )
+    actions[1].button(
+        "Zufall", icon=":material/casino:", on_click=_random, key="random_btn", width="content"
+    )
+
+    st.html(
+        hint_html(
+            "Demo-Konten: <b>pasajero1–10@trenes.local</b> · Passwort <b>demo1234</b>"
+        )
+    )
 
 trigger = st.session_state.pop("_do_search", False)
 if clicked_search or trigger:
@@ -80,56 +97,43 @@ results = st.session_state.get("search_results") or []
 params = st.session_state.get("search_params")
 
 if not results:
-    st.info(
-        "Noch keine Ergebnisse. Wähle Abfahrt und Ankunft und starte die Suche.",
-        icon=":material/travel_explore:",
-    )
     st.stop()
 
-st.caption(
-    f"{len(results)} Verbindung(en) · "
-    f"{params['origin'] or 'beliebiger Bahnhof'} → {params['destination'] or 'beliebiger Bahnhof'}"
-)
-
-rows = []
-for result in results:
-    state = inventory.availability_for_segment(feed, result["segment_id"])
-    rows.append(
-        {
-            "Zug": f"{result['train']} · {result['route_name']}",
-            "Verbindung": f"{result['origin_stop']} → {result['destination_stop']}",
-            "Ab": fmt_clock(result["departure"]),
-            "An": fmt_clock(result["arrival"]),
-            "Dauer": fmt_duration(result["duration_minutes"]),
-            "Frei": inventory.count_available(state),
-            "Preis": fmt_money(result["price"]),
-        }
+with st.container(border=True):
+    route = (
+        f"{params['origin'] or 'beliebiger Bahnhof'} → {params['destination'] or 'beliebiger Bahnhof'}"
+        if params
+        else ""
+    )
+    st.html(
+        card_head(
+            "Verbindungswahl",
+            f'<span class="muted">{len(results)} Verbindungen · {route}</span>',
+        )
     )
 
-event = st.dataframe(
-    rows,
-    hide_index=True,
-    on_select="rerun",
-    selection_mode="single-row",
-    key="results_table",
-    column_config={
-        "Frei": st.column_config.NumberColumn("Freie Sitze", format="%d"),
-        "Ab": st.column_config.TextColumn("Abfahrt"),
-        "An": st.column_config.TextColumn("Ankunft"),
-    },
-)
+    head = st.columns([1.1, 2.3, 1.4, 0.9, 0.8, 0.9])
+    for col, label in zip(head, ["Zug", "Verbindung", "Ab / An", "Dauer", "Frei", ""], strict=False):
+        col.html(f'<div class="sn-th">{label}</div>')
 
-selected = event.selection.rows if event and event.selection else []
-if selected:
-    chosen = results[selected[0]]
-    st.markdown(
-        f"**Ausgewählt:** {chosen['train']} {chosen['route_name']} · "
-        f"{chosen['origin_stop']} → {chosen['destination_stop']} · "
-        f"{fmt_clock(chosen['departure'])} – {fmt_clock(chosen['arrival'])} · "
-        f"{fmt_money(chosen['price'])}"
-    )
-    if st.button("Wagenansicht öffnen", type="primary", icon=":material/event_seat:"):
-        open_trip(chosen["trip_id"], chosen["segment_id"])
-        st.switch_page("app_pages/wagen.py")
-elif len(results) == 1:
-    st.caption("Tipp: Wähle eine Zeile in der Tabelle aus, um den Wagenplan zu öffnen.")
+    for result in results:
+        state = inventory.availability_for_segment(feed, result["segment_id"])
+        free = inventory.count_available(state)
+        row = st.columns([1.1, 2.3, 1.4, 0.9, 0.8, 0.9], vertical_alignment="center")
+        row[0].html(f'<div class="sn-td">{train_kind_html(result["train"])}</div>')
+        row[1].html(
+            f'<div class="sn-td">{route_html(result["origin_stop"], result["destination_stop"])}</div>'
+        )
+        row[2].html(
+            f'<div class="sn-td">'
+            f'{time_html(fmt_clock(result["departure"]), fmt_clock(result["arrival"]))}</div>'
+        )
+        row[3].html(f'<div class="sn-td">{fmt_duration(result["duration_minutes"])}</div>')
+        row[4].html(f'<div class="sn-td">{free_html(free)}</div>')
+        if row[5].button(
+            "Wagen",
+            key=f"open_{result['trip_id']}_{result['segment_id']}",
+            help=f"{fmt_money(result['price'])}",
+        ):
+            open_trip(result["trip_id"], result["segment_id"])
+            st.switch_page("app_pages/wagen.py")
