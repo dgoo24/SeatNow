@@ -1,0 +1,11 @@
+stop_id,stop_name,stop_lat,stop_lon
+MAD_ATOCHA,Madrid-Puerta de Atocha,40.4066,-3.6895
+MAD_CHAMARTIN,Madrid-Chamartin,40.4726,-3.6829
+ZAZ_DELICIAS,Zaragoza-Delicias,41.6586,-0.9119
+BCN_SANTS,Barcelona-Sants,41.3794,2.1402
+CORDOBA,Cordoba,37.8882,-4.7892
+SVQ_SANTA_JUSTA,Sevilla-Santa Justa,37.3925,-5.9752
+VLC_JOAQUIN_SOROLLA,Valencia-Joaquin Sorolla,39.4595,-0.3896
+ALICANTE,Alacant-Terminal,38.3444,-0.4948
+MLG_MARIA_ZAMBRANO,Malaga-Maria Zambrano,36.7117,-4.4316
+TOLEDO,Toledo,39.8624,-4.0112

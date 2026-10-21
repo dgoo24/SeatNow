@@ -1,0 +1,7 @@
+route_id,route_short_name,route_long_name,route_type
+R_MAD_BCN,AVE,AVE Madrid - Barcelona,2
+R_MAD_SVQ,AVE,AVE Madrid - Sevilla,2
+R_MAD_VLC,AVE,AVE Madrid - Valencia,2
+R_MAD_MLG,AVE,AVE Madrid - Malaga,2
+R_MAD_TOL,AVANT,AVANT Madrid - Toledo,2
+R_BCN_MAD,AVE,AVE Barcelona - Madrid,2

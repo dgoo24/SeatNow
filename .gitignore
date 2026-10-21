@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env
+.env
+.env.local
+**/.env
+
+# Build output
+dist/
+backend/dist/
+mobile/.expo/
+mobile/web-build/
+
+# Uploads & generated files
+uploads/
+backend/uploads/
+*.pdf
+!gtfs-data/**/*.pdf
+
+# Logs
+*.log
+npm-debug.log*
+
+# Prisma
+backend/prisma/*.db
+
+# OS
+.DS_Store
+Thumbs.db

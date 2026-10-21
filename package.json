@@ -1,0 +1,22 @@
+{
+  "name": "mvp1-aplicaciones-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MVP de reserva de billetes de tren: backend Fastify + TS + PostgreSQL + Redis + Stripe + SSE, y app movil Expo.",
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "install:all": "npm --prefix backend install && npm --prefix mobile install",
+    "db:generate": "npm --prefix backend run db:generate",
+    "db:push": "npm --prefix backend run db:push",
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "gtfs:ingest": "npm --prefix backend run gtfs:ingest",
+    "seed:admin": "npm --prefix backend run seed:admin",
+    "dev:api": "npm --prefix backend run dev",
+    "dev:mobile": "npm --prefix mobile run start",
+    "build:api": "npm --prefix backend run build",
+    "start:api": "npm --prefix backend run start",
+    "typecheck": "npm --prefix backend run typecheck"
+  }
+}

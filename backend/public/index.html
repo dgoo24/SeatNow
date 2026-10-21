@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Züge MVP · Sitzplätze pro Teilstrecke</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23ec0016'/><path d='M9 8h14v11a3 3 0 0 1-3 3h-2l-2 3-2-3h-2a3 3 0 0 1-3-3V8z' fill='%23fff'/><circle cx='13' cy='13' r='1.6' fill='%23ec0016'/><circle cx='19' cy='13' r='1.6' fill='%23ec0016'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@600;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ===== paleta: ferroviaria alemana (DB) sobre fondo nocturno ===== */
+    :root {
+      --db-red: #ec0016;
+      --db-red-dark: #b60011;
+      --db-red-soft: rgba(236, 0, 22, .14);
+      --bg: #0b0d14;
+      --bg2: #0f1220;
+      --panel: #151a2a;
+      --panel2: #101527;
+      --border: #262e47;
+      --border-soft: #1d2440;
+      --text: #eef1f8;
+      --muted: #98a2b8;
+      --blue: #3b82f6;
+      --blue2: #1d4ed8;
+      --green: #21c17a;
+      --amber: #f5a300;
+      --red: #ef4444;
+      --mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+      --sans: 'Roboto', 'Segoe UI', system-ui, sans-serif;
+      --cond: 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background:
+        radial-gradient(1100px 500px at 85% -100px, rgba(236, 0, 22, .16), transparent 60%),
+        radial-gradient(900px 420px at -10% 20%, rgba(59, 130, 246, .10), transparent 55%),
+        repeating-linear-gradient(-45deg, transparent 0 26px, rgba(255,255,255,.014) 26px 27px),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #7dabff; }
+
+    /* ===== header ===== */
+    header {
+      position: sticky; top: 0; z-index: 30;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      padding: 14px 26px;
+      background: linear-gradient(180deg, rgba(11,13,20,.96), rgba(11,13,20,.88));
+      backdrop-filter: blur(8px);
+      border-bottom: 3px solid var(--db-red);
+      box-shadow: 0 10px 30px rgba(0,0,0,.45);
+    }
+    header::after {
+      content: ''; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px;
+      background: linear-gradient(90deg, var(--db-red), #ff5a6a 35%, var(--db-red-dark) 70%, transparent);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand .mark {
+      width: 46px; height: 46px; border-radius: 12px; flex: 0 0 auto;
+      background: linear-gradient(145deg, var(--db-red), var(--db-red-dark));
+      display: grid; place-items: center;
+      box-shadow: 0 6px 18px rgba(236,0,22,.45), inset 0 1px 0 rgba(255,255,255,.35);
+      position: relative;
+    }
+    .brand .mark::after {
+      content: ''; position: absolute; inset: auto 8px 7px 8px; height: 3px; border-radius: 3px;
+      background: rgba(255,255,255,.75);
+    }
+    .brand .mark svg { width: 26px; height: 26px; }
+    h1 {
+      font-family: var(--cond); font-size: 27px; font-weight: 700; margin: 0;
+      letter-spacing: .01em; text-transform: uppercase; line-height: 1.05;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    h1 .dice { color: var(--db-red); }
+    h1 small {
+      display: block; font-family: var(--sans); font-size: 11.5px; font-weight: 400;
+      text-transform: none; letter-spacing: .04em; color: var(--muted); margin-top: 3px;
+      white-space: normal;
+    }
+    .badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+    .badge {
+      font-size: 11px; font-weight: 500; letter-spacing: .03em;
+      padding: 5px 11px; border-radius: 999px;
+      background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+      white-space: nowrap;
+    }
+    .badge.ok { color: #7ef0bb; border-color: rgba(33,193,122,.4); background: rgba(33,193,122,.10); }
+    .badge.warn { color: #ffd67a; border-color: rgba(245,163,0,.4); background: rgba(245,163,0,.10); }
+
+    /* ===== layout ===== */
+    main { max-width: 1080px; margin: 26px auto 60px; padding: 0 20px; }
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel2));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 18px 44px rgba(0,0,0,.38);
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--db-red), transparent 55%);
+    }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .card-title {
+      font-family: var(--cond); text-transform: uppercase; letter-spacing: .08em;
+      font-size: 13px; font-weight: 700; color: #ffb3ba; margin: 0;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-title::before {
+      content: ''; width: 10px; height: 10px; border-radius: 3px;
+      background: var(--db-red); box-shadow: 0 0 10px rgba(236,0,22,.7); transform: rotate(45deg);
+    }
+    label {
+      display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--muted); margin: 12px 0 6px;
+    }
+    input, select {
+      width: 100%; padding: 12px 14px; font-size: 15px; font-family: var(--sans);
+      color: var(--text); background: #0d1120; border: 1px solid var(--border);
+      border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+    input:focus, select:focus {
+      border-color: var(--db-red);
+      box-shadow: 0 0 0 3px rgba(236,0,22,.22);
+      background: #0a0e1a;
+    }
+    select { appearance: auto; cursor: pointer; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .grow { flex: 1 1 200px; }
+
+    button {
+      font-family: var(--sans); font-size: 14px; font-weight: 700; letter-spacing: .02em;
+      border: 1px solid transparent; border-radius: 11px; padding: 12px 18px;
+      cursor: pointer; transition: transform .12s, box-shadow .15s, filter .15s, background .15s;
+      color: var(--text); background: #232b45;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+    .primary {
+      background: linear-gradient(160deg, var(--db-red), var(--db-red-dark));
+      color: #fff; border-color: rgba(255,255,255,.14);
+      box-shadow: 0 8px 22px rgba(236,0,22,.38), inset 0 1px 0 rgba(255,255,255,.3);
+      text-transform: uppercase; letter-spacing: .06em; font-family: var(--cond);
+    }
+    .primary:hover { box-shadow: 0 10px 28px rgba(236,0,22,.5), inset 0 1px 0 rgba(255,255,255,.3); }
+    .ghost {
+      background: rgba(255,255,255,.04); border-color: var(--border); color: var(--muted);
+    }
+    .ghost:hover { color: var(--text); border-color: #3a4568; }
+    .icon-btn { padding: 9px 12px; font-size: 13px; }
+
+    /* ===== búsqueda ===== */
+    .search-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: end; }
+    .swap {
+      align-self: end; margin-bottom: 2px; width: 40px; height: 44px; padding: 0;
+      border-radius: 50%; background: var(--panel2); border: 1px solid var(--border);
+      color: var(--muted); font-size: 17px;
+    }
+    .search-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .search-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .search-actions .primary { flex: 1; padding: 14px; font-size: 16px; }
+    .search-hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .search-hint b { color: #ff8f99; font-weight: 600; }
+
+    /* ===== tabla de resultados ===== */
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      font-family: var(--cond); font-size: 11px; text-transform: uppercase; letter-spacing: .12em;
+      color: var(--muted); text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+    td { padding: 12px 10px; border-bottom: 1px solid var(--border-soft); font-size: 14px; vertical-align: middle; }
+    tbody tr { transition: background .15s, box-shadow .15s; position: relative; }
+    tbody tr:hover { background: rgba(236,0,22,.07); box-shadow: inset 3px 0 0 var(--db-red); }
+    .train-cell { display: flex; align-items: center; gap: 10px; }
+    .train-kind {
+      font-family: var(--cond); font-weight: 700; font-size: 11px; letter-spacing: .06em;
+      padding: 3px 9px; border-radius: 6px; text-transform: uppercase; white-space: nowrap;
+      background: linear-gradient(160deg, var(--db-red), var(--db-red-dark)); color: #fff;
+      box-shadow: 0 3px 10px rgba(236,0,22,.35);
+    }
+    .train-kind.local { background: linear-gradient(160deg, #2563eb, #1e40af); box-shadow: 0 3px 10px rgba(37,99,235,.35); }
+    .big { font-family: var(--cond); font-size: 17px; font-weight: 700; letter-spacing: .02em; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .err { color: #ff8f99; }
+    .route-cell { min-width: 210px; }
+    .route-cell .arrow { color: var(--db-red); font-weight: 700; margin: 0 6px; }
+    .open-btn {
+      background: linear-gradient(160deg, var(--db-red), var(--db-red-dark)); color: #fff;
+      border: none; padding: 9px 16px; font-family: var(--cond); text-transform: uppercase;
+      letter-spacing: .06em; font-size: 13px; border-radius: 9px;
+      box-shadow: 0 6px 16px rgba(236,0,22,.35);
+    }
+
+    /* ===== vista de viaje ===== */
+    .trip-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
+    #tripTitle { font-family: var(--cond); font-size: 24px; font-weight: 700; margin: 0; letter-spacing: .01em; }
+    #tripMeta { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
+    #tripCountdown {
+      font-family: var(--mono); font-size: 40px; font-weight: 700; line-height: 1;
+      color: var(--amber); background: #0c0f1c;
+      border: 2px solid rgba(245,163,0,.6); border-radius: 14px;
+      padding: 10px 20px; letter-spacing: .06em;
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+      text-align: center; flex: 0 0 auto;
+      box-shadow: 0 0 26px rgba(245,163,0,.18), inset 0 0 18px rgba(245,163,0,.06);
+    }
+    #tripCountdown.warn { color: #ff7a85; border-color: var(--red); box-shadow: 0 0 26px rgba(239,68,68,.25); animation: blink 1s steps(2) infinite; }
+    #tripCountdown:empty { display: none; }
+    @keyframes blink { 50% { opacity: .55; } }
+    .trip-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* panel de informatización estilo estación */
+    .live {
+      display: flex; gap: 12px; align-items: flex-start;
+      margin-top: 16px; padding: 14px 16px;
+      background: #12100a; border: 1px solid #5c4a12; border-radius: 12px;
+      color: #ffe082; font-size: 14px;
+      box-shadow: inset 0 0 26px rgba(245,163,0,.06);
+    }
+    .live .dot {
+      width: 11px; height: 11px; border-radius: 50%; background: var(--green);
+      margin-top: 4px; flex: 0 0 auto; animation: pulse 1.6s infinite;
+    }
+    .live.warn { border-color: #7a5c14; background: #17130a; color: #ffd08a; }
+    .live.warn .dot { background: var(--amber); animation: none; box-shadow: none; }
+    .live.err { border-color: #7f1d1d; background: #170b0b; color: #ffb3ba; }
+    .live.err .dot { background: var(--red); animation: none; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(33,193,122,.55); }
+      70% { box-shadow: 0 0 0 9px rgba(33,193,122,0); }
+      100% { box-shadow: 0 0 0 0 rgba(33,193,122,0); }
+    }
+    .live .kv { padding: 2px 0; }
+    .live .kv b { color: #c9b065; }
+    .live small { color: #a8944f; font-family: var(--mono); font-size: 11.5px; }
+    .live .next { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .live .next span {
+      font-family: var(--mono); font-size: 12px; background: #1d1908; border: 1px solid #4a3c10;
+      padding: 3px 9px; border-radius: 6px; color: #d8c37e;
+    }
+    .live .next span.delayed { color: var(--amber); border-color: #7a5c14; }
+
+    .chips { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0 6px; }
+    .chip {
+      font-size: 12.5px; padding: 5px 11px; border-radius: 999px;
+      background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+      transition: color .15s, border-color .15s;
+    }
+    .chip:hover { color: var(--text); }
+    .chip.focus {
+      color: #fff; border-color: rgba(236,0,22,.65); font-weight: 700;
+      background: linear-gradient(160deg, rgba(236,0,22,.9), var(--db-red-dark));
+      box-shadow: 0 4px 14px rgba(236,0,22,.35);
+    }
+    .tf {
+      font-size: 11px; font-weight: 700; color: #38bdf8;
+      background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.35);
+      border-radius: 999px; padding: 1px 8px; margin-left: 4px; vertical-align: middle;
+    }
+    .legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--muted); margin: 14px 0 14px; flex-wrap: wrap; }
+    .legend span { display: inline-flex; align-items: center; gap: 7px; }
+    .swatch { width: 13px; height: 13px; border-radius: 4px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+
+    /* ===== vagones ===== */
+    .wagon {
+      margin-top: 14px; padding: 0 0 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+      border: 1px solid var(--border); border-radius: 16px;
+      position: relative; overflow: hidden;
+    }
+    .wagon::after {
+      content: ''; position: absolute; left: 14px; right: 14px; bottom: 6px; height: 4px;
+      background: repeating-linear-gradient(90deg, #2b3352 0 18px, transparent 18px 30px);
+      opacity: .6; border-radius: 4px;
+    }
+    .wagon h3 {
+      font-family: var(--cond); font-size: 13px; letter-spacing: .1em; text-transform: uppercase;
+      color: #ffd0d4; margin: 0; padding: 11px 16px;
+      background: linear-gradient(90deg, rgba(236,0,22,.22), transparent 70%);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .wagon h3::before {
+      content: ''; width: 8px; height: 8px; border-radius: 2px; background: var(--db-red);
+      box-shadow: 0 0 8px rgba(236,0,22,.8);
+    }
+    .seats {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+      gap: 9px; padding: 14px 16px 22px;
+    }
+    .seat {
+      aspect-ratio: 1; border-radius: 12px 12px 7px 7px; border: 1px solid rgba(255,255,255,.16);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: #07130c;
+      position: relative; transition: transform .12s, filter .12s, box-shadow .15s;
+    }
+    .seat::after {
+      content: ''; position: absolute; inset: auto 4px 3px; height: 3px; border-radius: 3px;
+      background: rgba(0,0,0,.22);
+    }
+    .seat.available {
+      background: linear-gradient(160deg, #41e39b, var(--green));
+      box-shadow: 0 5px 14px rgba(33,193,122,.30), inset 0 1px 0 rgba(255,255,255,.5);
+      cursor: pointer;
+    }
+    .seat.available:hover { transform: translateY(-3px) scale(1.05); filter: brightness(1.08); box-shadow: 0 9px 20px rgba(33,193,122,.45); }
+    .seat.held {
+      background: linear-gradient(160deg, #ffc44d, var(--amber)); color: #241a02;
+      cursor: not-allowed; box-shadow: 0 4px 12px rgba(245,163,0,.30);
+    }
+    .seat.booked {
+      background: repeating-linear-gradient(-45deg, var(--red) 0 8px, #c81e2c 8px 16px);
+      color: #fff; cursor: not-allowed; box-shadow: 0 4px 12px rgba(239,68,68,.30);
+    }
+
+    /* ===== modales ===== */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(5, 7, 14, .78);
+      backdrop-filter: blur(6px);
+      display: none; align-items: center; justify-content: center; z-index: 40;
+      padding: 20px;
+    }
+    .overlay.show { display: flex; }
+    .modal {
+      width: 92%; max-width: 480px;
+      background: linear-gradient(180deg, var(--panel), var(--panel2));
+      border: 1px solid var(--border); border-radius: 18px; padding: 22px;
+      box-shadow: 0 30px 70px rgba(0,0,0,.6);
+      position: relative; overflow: hidden;
+    }
+    .modal::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--db-red), transparent 60%);
+    }
+    .modal h2 {
+      font-family: var(--cond); text-transform: uppercase; letter-spacing: .05em;
+      font-size: 17px; margin: 0 0 12px;
+    }
+    .kv { display: flex; justify-content: space-between; gap: 14px; padding: 6px 0; font-size: 13.5px; }
+    .kv b { color: var(--muted); font-weight: 400; text-align: left; }
+    .kv span { text-align: right; font-weight: 500; }
+    .countdown {
+      font-family: var(--mono); font-size: 21px; color: var(--amber); font-weight: 700;
+      text-align: center; margin: 10px 0; letter-spacing: .04em;
+      text-shadow: 0 0 18px rgba(245,163,0,.5);
+    }
+    .qr {
+      text-align: center; padding: 16px;
+      background: #fff; border-radius: 12px; margin: 10px 0;
+      border: 4px dashed #d7dbe6;
+    }
+    .qr .muted { color: #6b7280; font-size: 12px; margin-bottom: 6px; }
+    .qr code { font-family: var(--mono); font-size: 15px; letter-spacing: .1em; color: #0b0d14; font-weight: 700; }
+
+    /* ===== toasts ===== */
+    .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; max-width: min(420px, calc(100vw - 32px)); }
+    .toast {
+      background: linear-gradient(180deg, var(--panel), var(--panel2));
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 11px 15px; font-size: 13.5px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.5);
+      border-left: 4px solid var(--blue); animation: in .25s ease;
+      display: flex; gap: 9px; align-items: flex-start;
+    }
+    .toast::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--blue);
+      flex: 0 0 auto; margin-top: 5px;
+    }
+    .toast.ok { border-left-color: var(--green); }
+    .toast.ok::before { background: var(--green); box-shadow: 0 0 8px rgba(33,193,122,.8); }
+    .toast.err { border-left-color: var(--red); }
+    .toast.err::before { background: var(--red); box-shadow: 0 0 8px rgba(239,68,68,.8); }
+    @keyframes in { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .hidden { display: none !important; }
+    .error-banner {
+      background: rgba(239,68,68,.12); border: 1px solid #7f1d1d; color: #fca5a5;
+      padding: 11px 15px; border-radius: 12px; font-size: 13.5px; margin-bottom: 14px;
+    }
+
+    footer {
+      max-width: 1080px; margin: 0 auto 40px; padding: 0 20px;
+      color: #5c6580; font-size: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    }
+    footer .rail { color: var(--db-red); font-weight: 700; letter-spacing: .2em; }
+
+    @media (max-width: 760px) {
+      .search-grid { grid-template-columns: 1fr; }
+      .swap { display: none; }
+      h1 { font-size: 21px; white-space: normal; }
+      header { padding: 12px 16px; }
+      #tripTitle { font-size: 19px; }
+      #tripCountdown { font-size: 30px; }
+      .route-cell .route-sub { display: none; }
+      th:nth-child(3), td:nth-child(3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 7h16v13a4 4 0 0 1-4 4h-1.8L16 28l-2.2-4H12a4 4 0 0 1-4-4V7z" fill="#fff"/>
+          <rect x="11" y="11" width="4.4" height="5" rx="1.2" fill="#ec0016"/>
+          <rect x="16.6" y="11" width="4.4" height="5" rx="1.2" fill="#ec0016"/>
+          <rect x="10" y="26.5" width="3" height="3.5" rx="1.5" fill="#fff"/>
+          <rect x="19" y="26.5" width="3" height="3.5" rx="1.5" fill="#fff"/>
+        </svg>
+      </div>
+      <h1>Züge <span class="dice">MVP</span>
+        <small>Sitzplätze pro Teilstrecke · ICE/IC über Fulda · echte GTFS-Daten</small>
+      </h1>
+    </div>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <main>
+    <div id="errorBanner" class="error-banner hidden"></div>
+
+    <section id="searchCard" class="card">
+      <div class="card-head">
+        <p class="card-title">Verbindung suchen</p>
+      </div>
+      <div class="search-grid">
+        <div class="grow">
+          <label for="origin">Von</label>
+          <input id="origin" placeholder="Startbahnhof, z. B. Frankfurt (M) Hbf" autocomplete="off" list="stops-origin" />
+          <datalist id="stops-origin"></datalist>
+        </div>
+        <button class="swap" id="swapBtn" title="Tauschen" type="button">&#8646;</button>
+        <div class="grow">
+          <label for="destination">Nach</label>
+          <input id="destination" placeholder="Zielbahnhof, z. B. Erfurt Hbf" autocomplete="off" list="stops-dest" />
+          <datalist id="stops-dest"></datalist>
+        </div>
+      </div>
+      <div class="search-meta">
+        <div>
+          <label for="date">Datum</label>
+          <input type="date" id="date" />
+        </div>
+        <div>
+          <label for="timeType">Zeitraum</label>
+          <select id="timeType">
+            <option value="departure">Abfahrt ab</option>
+            <option value="arrival">Ankunft bis</option>
+          </select>
+        </div>
+        <div>
+          <label for="timeFrom">Von</label>
+          <input type="time" id="timeFrom" />
+        </div>
+        <div>
+          <label for="timeTo">Bis</label>
+          <input type="time" id="timeTo" />
+        </div>
+      </div>
+      <div class="search-actions">
+        <button class="primary" id="searchBtn">Zug finden</button>
+        <button class="ghost" id="lotteryBtn" title="Beliebige Verbindung">Zufall</button>
+      </div>
+      <div class="search-hint">Demo-Konten: <b>pasajero1–10@trenes.local</b> · Passwort <b>demo1234</b></div>
+    </section>
+
+    <section id="resultsCard" class="card hidden" style="margin-top:22px">
+      <div class="card-head">
+        <p class="card-title">Verbindungswahl</p>
+        <span class="muted" id="resultsCount"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Zug</th>
+              <th>Verbindung</th>
+              <th>Ab / An</th>
+              <th>Dauer</th>
+              <th>Frei</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tripCard" class="card hidden" style="margin-top:22px">
+      <div class="trip-top">
+        <div style="min-width:0">
+          <p class="card-title">Wagenansicht · Teilstrecke</p>
+          <h2 id="tripTitle">–</h2>
+          <div id="tripMeta"></div>
+        </div>
+        <div class="row">
+          <div id="tripCountdown"></div>
+        </div>
+      </div>
+
+      <div class="trip-tools" style="margin-top:14px">
+        <button class="ghost icon-btn" id="backToResultsBtn">&#8592; Ergebnisse</button>
+        <button class="ghost icon-btn" id="refreshMapBtn">Karte aktualisieren</button>
+        <button class="primary icon-btn" id="simulateBtn" title="Demo-Kauf eines Sitzplatzes">Demo-Kauf</button>
+      </div>
+
+      <div id="liveBox" class="live hidden"></div>
+
+      <label style="margin-top:16px">Zughalte</label>
+      <div id="stops" class="chips"></div>
+
+      <label for="segment">Teilstrecke (Sitzplätze gelten nur hierfür!)</label>
+      <select id="segment"></select>
+
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--green)"></span> frei</span>
+        <span><span class="swatch" style="background:var(--amber)"></span> reserviert (Hold)</span>
+        <span><span class="swatch" style="background:var(--red)"></span> belegt</span>
+        <span class="muted">Klick auf ein freies Sitzplatz = Reservierung</span>
+      </div>
+
+      <div id="wagons"></div>
+    </section>
+  </main>
+
+  <footer>
+    <span><span class="rail">════</span> MVP Züge · Sitzplatzverwaltung pro Teilstrecke</span>
+    <span>Fastify · Prisma · PostgreSQL · Redis · SSE</span>
+  </footer>
+
+  <!-- reservar modal -->
+  <div class="overlay" id="reserveOverlay">
+    <div class="modal">
+      <h2 id="reserveTitle">Sitzplatz reservieren</h2>
+      <div id="reserveBody"></div>
+    </div>
+  </div>
+
+  <!-- auth modal -->
+  <div class="overlay" id="authOverlay">
+    <div class="modal">
+      <h2 id="authTitle">Konto</h2>
+      <div id="authBody"></div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script>
+    /* ---------- estado ---------- */
+    const state = {
+      token: localStorage.getItem('token') || '',
+      email: localStorage.getItem('email') || '',
+      results: [],
+      segments: [],
+      tripId: null,
+      currentSegmentId: null,
+      seatEls: new Map(),
+      es: null,
+      liveTimer: null,
+      holdTimer: null,
+      currentHold: null,
+      tripTimer: null,
+      tripTickTimer: null
+    };
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const localDateStr = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const localTimeStr = (d) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+
+    async function api(path, opts = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+      if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+      const res = await fetch(path, { ...opts, headers });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (e) { data = { message: text }; }
+      if (!res.ok) throw new Error((data && (data.message || data.error)) || ('HTTP ' + res.status));
+      return data;
+    }
+
+    function toast(msg, kind) {
+      if (!msg) return;
+      const el = document.createElement('div');
+      el.className = 'toast ' + (kind || '');
+      el.textContent = msg;
+      $('toasts').appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 5200);
+    }
+
+    function setBadges() {
+      Promise.all([
+        api('/api/trains/stats').catch(() => null),
+        api('/health').catch(() => null)
+      ]).then(([s, h]) => {
+        let html = '';
+        if (s) {
+          html += '<span class="badge ' + (s.lastGtfsIngestedAt ? 'ok' : 'warn') + '">GTFS ' +
+            (s.lastGtfsIngestedAt ? 'Import ' + fmtDate(s.lastGtfsIngestedAt) : 'kein Import') + '</span>';
+          html += '<span class="badge">' + s.trips + ' ICE/IC</span>';
+          html += '<span class="badge">' + s.segments + ' Teilstrecken</span>';
+          html += '<span class="badge">' + s.seats + ' Sitzplätze</span>';
+          html += '<span class="badge">' + s.serviceDates + ' Betriebstage</span>';
+        }
+        if (h) {
+          html += '<span class="badge">Zahlungen ' + h.payments + '</span>';
+          html += '<span class="badge ' + (h.mail === 'disabled' ? 'warn' : 'ok') + '">E-Mail ' + h.mail + '</span>';
+        }
+        html += '<button class="ghost" style="margin-left:4px" onclick="openAuth()">' +
+          esc(state.token ? 'Konto: ' + state.email : 'Anmelden / Registrieren') + '</button>';
+        $('badges').innerHTML = html;
+      });
+    }
+    function fmtDate(iso) {
+      if (!iso) return '?';
+      const d = new Date(iso);
+      return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+    function fmtClock(iso) {
+      if (!iso) return '--';
+      return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    /* ---------- search ---------- */
+    let numbersRetryTimer = null;
+    let numbersRetryCount = 0;
+    let lastSearchKey = '';
+
+    async function doSearch() {
+      hideError();
+      const params = new URLSearchParams();
+      const date = $('date').value;
+      if (date) params.set('date', date);
+      const origin = $('origin').value.trim();
+      const destination = $('destination').value.trim();
+      if (origin) params.set('origin', origin);
+      if (destination) params.set('destination', destination);
+      const timeType = $('timeType').value;
+      const timeFrom = $('timeFrom').value;
+      const timeTo = $('timeTo').value;
+      if (timeType) params.set('timeType', timeType);
+      if (timeFrom) params.set('timeFrom', timeFrom);
+      if (timeTo) params.set('timeTo', timeTo);
+
+      $('searchBtn').disabled = true;
+      $('searchBtn').textContent = 'Suche…';
+      try {
+        const r = await api('/api/trains/search?' + params.toString());
+        state.results = Array.isArray(r) ? r : (r.trips || []);
+        renderResults();
+        lastSearchKey = params.toString();
+        numbersRetryCount = 0;
+        if (numbersRetryTimer) { clearTimeout(numbersRetryTimer); numbersRetryTimer = null; }
+        // la Zugnummer llega en background: reintenta un par de veces si faltan
+        const missing = state.results.filter(t => !t.trainNumber && !t.routeName?.match?.(/\d/)).length;
+        if (missing > 0) maybeRetryNumbers();
+      } catch (err) {
+        showError('Suche fehlgeschlagen: ' + err.message);
+        $('results').innerHTML = '<tr><td colspan="6" class="err">' + esc(err.message) + '</td></tr>';
+        $('resultsCard').classList.remove('hidden');
+      } finally {
+        $('searchBtn').disabled = false;
+        $('searchBtn').textContent = 'Zug finden';
+      }
+    }
+
+    function maybeRetryNumbers() {
+      if (numbersRetryCount >= 3 || !lastSearchKey) return;
+      numbersRetryTimer = setTimeout(async () => {
+        try {
+          const r = await api('/api/trains/search?' + lastSearchKey);
+          state.results = Array.isArray(r) ? r : (r.trips || []);
+          renderResults();
+          numbersRetryCount++;
+          const stillMissing = state.results.some(t => !t.trainNumber && !t.routeName?.match?.(/\d/));
+          if (stillMissing) maybeRetryNumbers();
+        } catch (e) {}
+      }, 4000);
+    }
+
+    function fmtDuration(min) {
+      if (min == null) return '–';
+      return Math.floor(min / 60) + ':' + String(min % 60).padStart(2, '0') + ' h';
+    }
+    function fmtMoney(cents) {
+      if (cents == null) return '–';
+      return (cents / 100).toFixed(2).replace('.', ',') + ' €';
+    }
+
+    function renderResults() {
+      const rows = state.results.map(t => {
+        const label = trainLabel(t);
+        const kindCls = /^ICE|^IC/.test(label) ? '' : ' local';
+        const free = t.availableSeats != null
+          ? '<b style="color:var(--green)">' + t.availableSeats + '</b> frei'
+          : '–';
+        return '<tr>' +
+          '<td><div class="train-cell"><span class="train-kind' + kindCls + '">' + esc(label) + '</span></div></td>' +
+          '<td class="route-cell"><b>' + esc(t.originStop) + '</b><span class="arrow">➔</span><b>' + esc(t.destinationStop) + '</b></td>' +
+          '<td><b>' + esc(t.departureTime || '--:--') + '</b> <span class="muted">→</span> <b>' + esc(t.arrivalTime || '--:--') + '</b></td>' +
+          '<td>' + fmtDuration(t.durationMinutes) + '</td>' +
+          '<td>' + free + '</td>' +
+          '<td style="text-align:right"><button class="open-btn" data-trip="' + t.id + '">Wagen</button></td>' +
+          '</tr>';
+      }).join('');
+      $('results').innerHTML = rows || '<tr><td colspan="6" class="muted">Keine Verbindungen gefunden.</td></tr>';
+      $('resultsCount').textContent = state.results.length + ' Verbindungen';
+      $('resultsCard').classList.remove('hidden');
+      $('results').querySelectorAll('button[data-trip]').forEach(btn =>
+        btn.addEventListener('click', () => loadTrip(btn.dataset.trip)));
+    }
+
+    /* ---------- trip / wagon ---------- */
+    const TRIP_MAX_MS = 3 * 60 * 1000; // maximo 3 minutos en la vista de vagon
+
+    /** Label del tren: Zugnummer real ("ICE 273") si existe; si no, la Linie. */
+    function trainLabel(tr, rtName) {
+      const num = tr.trainNumberForDate || tr.trainNumber || null;
+      if (num && /^[0-9]{1,5}$/.test(String(num))) {
+        const m = String(rtName || tr.routeName || '').match(/^([A-Za-z]{2,4})/);
+        return m ? (m[1].toUpperCase() + ' ' + num) : ('ICE ' + num);
+      }
+      if (num) return 'Tf ' + num;
+      const name = rtName || tr.routeName || '';
+      const m2 = String(name).match(/^([A-Za-z]{2,4})\s+\d{1,5}/);
+      if (m2) return (m2[1].toUpperCase() + ' ' + (name.match(/\d{1,5}/)?.[0] || ''));
+      const m1 = String(name).match(/^([A-Za-z]{2,4}\s+\d{1,5})/);
+      return m1 ? m1[1].toUpperCase() : name;
+    }
+
+    function showTripView() {
+      $('searchCard').classList.add('hidden');
+      $('resultsCard').classList.add('hidden');
+      $('tripCard').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    function clearTripTimer() {
+      if (state.tripTimer) { clearTimeout(state.tripTimer); state.tripTimer = null; }
+      if (state.tripTickTimer) { clearInterval(state.tripTickTimer); state.tripTickTimer = null; }
+      $('tripCountdown').textContent = '';
+      $('tripCountdown').classList.remove('warn');
+    }
+    function startTripTimer() {
+      clearTripTimer();
+      const deadline = Date.now() + TRIP_MAX_MS;
+      const tick = () => {
+        const el = $('tripCountdown');
+        const ms = deadline - Date.now();
+        if (ms <= 0) { el.textContent = ''; el.classList.remove('warn'); return; }
+        const s = Math.ceil(ms / 1000);
+        el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        el.classList.toggle('warn', s <= 60);
+      };
+      tick();
+      state.tripTickTimer = setInterval(tick, 1000);
+      // Maximo duro: no se reinicia con la actividad ni se pausa con modales abiertos.
+      state.tripTimer = setTimeout(() => {
+        toast('Maximale Anzeigedauer der Wagenansicht (3 Min.). Zurück zu den Ergebnissen.', 'err');
+        backToResults();
+      }, TRIP_MAX_MS);
+    }
+    function backToResults() {
+      clearTripTimer();
+      closeSse();
+      stopLive();
+      if (state.holdTimer) { clearInterval(state.holdTimer); state.holdTimer = null; }
+      state.currentHold = null;
+      hide($('reserveOverlay'));
+      hide($('authOverlay'));
+      $('tripCard').classList.add('hidden');
+      $('searchCard').classList.remove('hidden');
+      $('resultsCard').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function loadTrip(tripId, preselectSegmentId) {
+      state.tripId = tripId;
+      closeSse();
+      stopLive();
+      $('liveBox').classList.add('hidden');
+      showTripView();
+      startTripTimer();
+      $('wagons').innerHTML = '<span class="muted">Wagen wird geladen...</span>';
+      try {
+        const date = $('date').value || null;
+        const params = new URLSearchParams();
+        if (date) params.set('date', date);
+        if ($('origin').value.trim()) params.set('origin', $('origin').value.trim());
+        if ($('destination').value.trim()) params.set('destination', $('destination').value.trim());
+        const t = await api('/api/trains/' + tripId + (params.toString() ? ('?' + params.toString()) : ''));
+        const tripTitleText = (tt) => trainLabel(tt, tt.routeName) + ' · ' + tt.originStop + ' → ' + tt.destinationStop;
+        $('tripTitle').textContent = tripTitleText(t);
+        // Zugnummer llega en background del HAFAS: si aún no está, se refresca el título.
+        if (!t.trainNumber) {
+          setTimeout(() => {
+            if (state.tripId !== tripId) return;
+            api('/api/trains/' + tripId + (params.toString() ? ('?' + params.toString()) : ''))
+              .then((t2) => { if (state.tripId === tripId && t2.trainNumber) $('tripTitle').textContent = tripTitleText(t2); })
+              .catch(() => {});
+          }, 5000);
+        }
+        $('tripMeta').textContent = 'Abfahrt ' + t.departureTime + ' · Ankunft ' + t.arrivalTime + ' · ' + t.stops.length + ' Halte';
+        $('stops').innerHTML = t.stops.map((s, i) =>
+          '<span class="chip' + (s.stopName === t.originStop || s.stopName === t.destinationStop ? ' focus' : '') + '">' + esc(s.stopName) + ' ' + (s.departureTime || s.arrivalTime || '') + '</span>').join('');
+        const sel = $('segment');
+        sel.innerHTML = t.segments.map(s =>
+          '<option value="' + s.id + '">' + esc(s.from) + ' → ' + esc(s.to) + ' · ' + esc(s.departureTime) + '-' + esc(s.arrivalTime) + ' · ' + fmtMoney(s.price) + ' (' + s.durationMinutes + ' Min.)</option>').join('');
+        state.segments = t.segments;
+        sel.value = preselectSegmentId || t.segments[0].id;
+        sel.onchange = () => loadSegment(sel.value);
+        openSse(tripId);
+        startLive(tripId);
+        loadSegment(sel.value);
+      } catch (err) { showError('Fehler beim Laden der Fahrt: ' + err.message); }
+    }
+    async function loadSegment(segmentId) {
+      state.currentSegmentId = segmentId;
+      $('wagons').innerHTML = '<span class="muted">Verfügbarkeit der Teilstrecke wird geladen...</span>';
+      try {
+        const seg = state.segments.find(s => s.id === segmentId);
+        const avail = await api('/api/trains/' + state.tripId + '/segments/' + segmentId + '/availability');
+        renderWagon(avail);
+        const books = avail.filter(a => a.status !== 'AVAILABLE').length;
+        toast(seg ? 'Teilstrecke ' + seg.from + ' → ' + seg.to + ': ' + books + ' von ' + avail.length + ' Sitzplätzen belegt/reserviert' : '', 'ok');
+      } catch (err) { $('wagons').innerHTML = '<span class="err">' + esc(err.message) + '</span>'; }
+    }
+    function renderWagon(avail) {
+      const byCar = {};
+      for (const a of avail) (byCar[a.carNumber] = byCar[a.carNumber] || []).push(a);
+      const cars = Object.keys(byCar).sort();
+      $('wagons').innerHTML = cars.map(car => {
+        const seats = byCar[car]
+          .sort((x, y) => x.seatNumber.localeCompare(y.seatNumber))
+          .map(a => {
+            const tooltip = a.reservations && a.reservations.length
+              ? 'Gebucht: ' + a.reservations.map(r => r.from + '→' + r.to + ' (' + r.status.toLowerCase() + ')').join('; ')
+              : 'Frei in dieser Teilstrecke';
+            return '<button class="seat ' + a.status.toLowerCase() + '" data-seat="' + a.seatId + '" ' +
+              'data-seatnum="' + esc(a.seatNumber) + '" data-car="' + a.carNumber + '" ' +
+              (a.status !== 'AVAILABLE' ? 'disabled ' : '') +
+              'title="' + esc(tooltip) + '">' + esc(a.seatNumber) + '</button>';
+          }).join('');
+        return '<div class="wagon"><h3>Wagen ' + car + '</h3><div class="seats">' + seats + '</div></div>';
+      }).join('');
+      state.seatEls.clear();
+      $('wagons').querySelectorAll('.seat').forEach(el => state.seatEls.set(el.dataset.seat, el));
+      $('wagons').querySelectorAll('.seat.available').forEach(el =>
+        el.addEventListener('click', () => openReserve(el.dataset.seat, el.dataset.seatnum, el.dataset.car)));
+    }
+    function setSeatStatus(seatId, status) {
+      const el = state.seatEls.get(seatId);
+      if (!el) return;
+      el.className = 'seat ' + status.toLowerCase();
+      el.disabled = status !== 'AVAILABLE';
+      if (status === 'AVAILABLE') el.onclick = () => openReserve(seatId, el.dataset.seatnum, el.dataset.car);
+    }
+
+    /* ---------- Echtzeit ---------- */
+    function renderLive(d) {
+      const box = $('liveBox');
+      if (!d.available) {
+        box.className = 'live warn';
+        box.innerHTML = '<span class="dot"></span><div><b>Echtzeit DB:</b> <span>' +
+          esc(d.message || 'nicht verfügbar') + '</span> <small>Aktualisiert ' + fmtClock(d.fetchedAt) + '</small></div>';
+        box.classList.remove('hidden');
+        return;
+      }
+      const l = d.live;
+      const delay = l.cancelled
+        ? '<b style="color:var(--red)">AUSGEFALLEN</b>'
+        : (l.delayMinutes
+            ? '<b style="color:var(--amber)">Verspätung ' + l.delayMinutes + ' Min.</b>'
+            : '<b style="color:var(--green)">pünktlich</b>');
+      const plat = l.platform
+        ? 'Gleis ' + esc(l.platform) + (l.plannedPlatform && l.plannedPlatform !== l.platform ? ' (geplant ' + esc(l.plannedPlatform) + ')' : '')
+        : '';
+      const pos = l.position
+        ? (l.position.kind === 'latlon'
+            ? 'lat ' + l.position.latitude.toFixed(3) + ', lon ' + l.position.longitude.toFixed(3)
+            : 'in ' + (l.position.name || 'Halt'))
+        : '';
+      const salida = l.actualDeparture && l.actualDeparture !== l.plannedDeparture
+        ? '<div class="kv"><b>Tatsächl. Abfahrt</b><span>' + esc(l.actualDeparture) + '</span></div>' : '';
+      const llegada = l.actualArrival && l.actualArrival !== l.plannedArrival
+        ? '<div class="kv"><b>Tatsächl. Ankunft</b><span>' + esc(l.actualArrival) + '</span></div>' : '';
+      const next = (l.nextStops || []).map(n =>
+        '<span class="' + (n.delayMinutes ? 'delayed' : '') + '">' + esc(n.name) + ' ' + esc(n.time || '') +
+        (n.delayMinutes ? ' (+' + n.delayMinutes + ')' : '') + '</span>').join('');
+      box.className = 'live';
+      box.innerHTML = '<span class="dot"></span><div style="flex:1">' +
+        '<div class="kv"><b>Status</b><span>' + delay + '</span></div>' +
+        (plat ? '<div class="kv"><b>Gleis</b><span>' + plat + '</span></div>' : '') +
+        (pos ? '<div class="kv"><b>Position</b><span>' + esc(pos) + '</span></div>' : '') +
+        salida + llegada +
+        '<small>Aktualisiert ' + fmtClock(d.fetchedAt) + '</small>' +
+        (next ? '<div class="next">' + next + '</div>' : '') +
+        '</div>';
+      box.classList.remove('hidden');
+    }
+    function startLive(tripId) {
+      stopLive();
+      const poll = () => {
+        if (state.tripId !== tripId) return;
+        api('/api/trains/' + tripId + '/realtime')
+          .then(d => { if (state.tripId === tripId) renderLive(d); })
+          .catch(() => {});
+      };
+      poll();
+      state.liveTimer = setInterval(poll, 30000);
+    }
+    function stopLive() {
+      if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; }
+    }
+
+    /* ---------- SSE ---------- */
+    function openSse(tripId) {
+      if (!('EventSource' in window)) return;
+      const es = new EventSource('/api/trains/' + tripId + '/live');
+      state.es = es;
+      es.addEventListener('seat:update', e => {
+        const d = JSON.parse(e.data);
+        if (d.segmentId && d.segmentId === state.currentSegmentId) setSeatStatus(d.seatId, d.status);
+      });
+      es.addEventListener('booking:update', e => {
+        const d = JSON.parse(e.data);
+        toast('Buchung ' + d.bookingId.slice(0, 8) + ' → ' + d.status, 'ok');
+      });
+      es.addEventListener('realtime', e => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d && d.available) renderLive(d);
+        } catch (err) {}
+      });
+      es.onerror = () => {};
+    }
+    function closeSse() { if (state.es) { state.es.close(); state.es = null; } }
+
+    /* ---------- reserve flow ---------- */
+    function openReserve(seatId, seatNumber, carNumber) {
+      if (!state.token) return openAuth('Zum Reservieren benötigst du ein Konto.');
+      const seg = state.segments.find(s => s.id === state.currentSegmentId);
+      if (!seg) return;
+      $('reserveTitle').textContent = 'Sitz Wagen ' + carNumber + ' - ' + seatNumber + ' · ' + seg.from + ' → ' + seg.to;
+      $('reserveBody').innerHTML =
+        '<div class="kv"><b>Teilstrecke</b><span>' + esc(seg.from) + ' → ' + esc(seg.to) + '</span></div>' +
+        '<div class="kv"><b>Zeit</b><span>' + esc(seg.departureTime) + ' - ' + esc(seg.arrivalTime) + '</span></div>' +
+        '<div class="kv"><b>Entfernung</b><span>' + Math.round(seg.distanceKm) + ' km</span></div>' +
+        '<div class="kv"><b>Sitzpreis</b><span>' + fmtMoney(seg.price) + '</span></div>' +
+        '<div class="kv" style="margin:10px 0"><b>Benutzer</b><span>' + esc(state.email || '-') + '</span></div>' +
+        '<div id="holdArea">' +
+          '<button id="holdBtn" class="primary" style="width:100%">Sitzplatz reservieren (Hold)</button>' +
+        '</div>';
+      show($('reserveOverlay'));
+      $('holdBtn').onclick = () => doHold(seatId, seg);
+    }
+    function doHold(seatId, seg) {
+      api('/api/bookings/hold', { method: 'POST', body: JSON.stringify({ tripId: state.tripId, seatId: seatId, segmentId: seg.id }) })
+        .then(res => {
+          state.currentHold = { bookingId: res.booking.id, expiresAt: res.expiresAt };
+          const area = $('holdArea');
+          area.innerHTML =
+            '<div class="kv"><b>Buchung</b><span>' + res.booking.id.slice(0, 8) + ' · ' + res.booking.status + '</span></div>' +
+            '<div class="countdown" id="countdown"></div>' +
+            '<button id="payBtn" class="primary" style="width:100%;margin-top:10px">Jetzt bezahlen (' + fmtMoney(res.booking.totalAmount) + ')</button>' +
+            '<button id="cancelHoldBtn" class="ghost" style="width:100%;margin-top:8px">Buchung stornieren</button>';
+          toast('Sitzplatz reserviert. Du hast ' + res.ttlSeconds + ' s zum Bezahlen.', 'ok');
+          $('payBtn').onclick = () => doCheckout();
+          $('cancelHoldBtn').onclick = () => cancelHold();
+          startCountdown(res.expiresAt);
+        })
+        .catch(err => { if (!err.message.includes('401')) toast('Hold fehlgeschlagen: ' + err.message, 'err'); });
+    }
+    function startCountdown(expiresAt) {
+      if (state.holdTimer) clearInterval(state.holdTimer);
+      const tick = () => {
+        const ms = new Date(expiresAt) - Date.now();
+        if (ms <= 0) {
+          $('countdown').textContent = 'Zeit abgelaufen';
+          $('payBtn') && ($('payBtn').disabled = true);
+          if (state.es) { /* der Sweep gibt den Sitzplatz frei */ }
+          return;
+        }
+        $('countdown').textContent = Math.max(0, Math.ceil(ms / 1000)) + ' s verbleibend';
+      };
+      tick();
+      state.holdTimer = setInterval(tick, 1000);
+    }
+    function doCheckout() {
+      if (!state.currentHold) return;
+      api('/api/bookings/checkout', { method: 'POST', body: JSON.stringify({ bookingId: state.currentHold.bookingId }) })
+        .then(res => {
+          if (state.holdTimer) clearInterval(state.holdTimer);
+          clearTripTimer(); // pago completado: detener y ocultar el conteo de la pantalla de vagon
+          const area = $('reserveBody');
+          area.innerHTML =
+            '<div class="qr" style="margin:10px 0"><div class="muted">Boarding Pass (QR)</div><code>' + esc(res.booking.qrPayload || '-') + '</code></div>' +
+            '<div class="kv"><b>Status</b><span style="color:var(--green);font-weight:700">' + esc(res.booking.status) + '</span></div>' +
+            '<div class="kv"><b>Zahlung</b><span>' + esc(res.payment) + ' (sofort)</span></div>' +
+            '<div class="kv"><b>Sitzplatz</b><span>Wagen ' + res.booking.seat.carNumber + ' - ' + esc(res.booking.seat.seatNumber) + '</span></div>' +
+            '<button id="closeBtn" class="ghost" style="width:100%;margin-top:12px">Schließen</button>' +
+            '<span class="muted">PDF per E-Mail: ' + (res.emailSent ? 'gesendet' : 'SMTP nicht konfiguriert') + '</span>';
+          $('closeBtn').onclick = () => hide($('reserveOverlay'));
+          toast('Zahlung erfolgreich. Sitzplatz BESTÄTIGT.', 'ok');
+          // el SSE puede ya haber recoloreado; refrescamos por si acaso
+          loadSegment(state.currentSegmentId);
+        })
+        .catch(err => toast('Zahlung fehlgeschlagen: ' + err.message, 'err'));
+    }
+    function cancelHold() {
+      if (!state.currentHold) return;
+      api('/api/bookings/' + state.currentHold.bookingId + '/cancel', { method: 'POST', body: '{}' })
+        .then(() => {
+          if (state.holdTimer) clearInterval(state.holdTimer);
+          hide($('reserveOverlay'));
+          toast('Buchung storniert, Sitzplatz freigegeben.', 'ok');
+          loadSegment(state.currentSegmentId);
+        })
+        .catch(err => toast('Stornierung fehlgeschlagen: ' + err.message, 'err'));
+    }
+
+    /* ---------- demo simulate ---------- */
+    function simulate() {
+      if (!state.tripId || !state.currentSegmentId) return toast('Öffne zuerst einen Zug und eine Teilstrecke.', 'err');
+      $('simulateBtn').disabled = true;
+      api('/api/demo/purchase', { method: 'POST', body: JSON.stringify({ tripId: state.tripId, segmentId: state.currentSegmentId }) })
+        .then(r => {
+          $('simulateBtn').disabled = false;
+          toast('' + r.passengerEmail + ' hat Sitzplatz ' + r.carNumber + '-' + r.seatNumber +
+            ' auf ' + r.segmentFrom + ' → ' + r.segmentTo + ' gekauft (' + fmtMoney(r.price) + ')', 'ok');
+        })
+        .catch(err => { $('simulateBtn').disabled = false; toast('Simulation: ' + err.message, 'err'); });
+    }
+
+    /* ---------- auth ---------- */
+    function openAuth(msg) {
+      $('authBody').innerHTML =
+        (msg ? '<div class="error-banner" style="color:#fca5a5">' + esc(msg) + '</div>' : '') +
+        '<div class="kv"><b>E-Mail</b><span>' + esc(state.email || 'demo@trenes.local') + '</span></div>' +
+        '<div class="row" style="margin-top:12px">' +
+          '<button class="primary" id="loginDemoBtn" style="flex:1">Demo-Anmeldung</button>' +
+        '</div>' +
+        '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">' +
+          '<label>E-Mail</label><input id="authEmail" value="' + esc(state.email || '') + '" style="width:100%" />' +
+          '<label>Passwort</label><input id="authPass" type="password" value="demo1234" style="width:100%" />' +
+          '<div class="row" style="margin-top:10px">' +
+            '<button id="loginBtn" style="flex:1">Anmelden</button>' +
+            '<button id="registerBtn" class="ghost" style="flex:1">Registrieren</button>' +
+          '</div>' +
+        '</div>';
+      show($('authOverlay'));
+      $('loginDemoBtn').onclick = () => doLogin('demo@trenes.local', 'demo1234');
+      $('loginBtn').onclick = () => doLogin($('authEmail').value.trim(), $('authPass').value);
+      $('registerBtn').onclick = () => doRegister($('authEmail').value.trim(), $('authPass').value);
+    }
+    function doLogin(email, password) {
+      api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+        .then(r => onAuth(r, email)).catch(err => toast('Login: ' + err.message, 'err'));
+    }
+    function doRegister(email, password) {
+      if (!email || password.length < 8) return toast('E-Mail und Passwort (mind. 8 Zeichen) erforderlich', 'err');
+      api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, fullName: email.split('@')[0] }) })
+        .then(r => onAuth(r, email)).catch(err => toast('Registrierung: ' + err.message, 'err'));
+    }
+    function onAuth(r, email) {
+      state.token = r.token; state.email = email;
+      localStorage.setItem('token', r.token); localStorage.setItem('email', email);
+      hide($('authOverlay'));
+      toast('Angemeldet: ' + email, 'ok');
+      setBadges();
+    }
+    function logout() {
+      state.token = ''; state.email = '';
+      localStorage.removeItem('token'); localStorage.removeItem('email');
+      setBadges();
+    }
+
+    /* ---------- ui ---------- */
+    const show = (el) => el.classList.add('show');
+    const hide = (el) => el.classList.remove('show');
+    function showError(msg) { $('errorBanner').textContent = msg; $('errorBanner').classList.remove('hidden'); }
+    function hideError() { $('errorBanner').classList.add('hidden'); }
+
+    function setupAutocomplete(inputId, listId) {
+      $(inputId).addEventListener('input', debounce(async (e) => {
+        const q = e.target.value.trim();
+        if (q.length < 2) return;
+        try {
+          const stops = await api('/api/trains/stops?q=' + encodeURIComponent(q));
+          $(listId).innerHTML = stops.map(s => '<option value="' + esc(s.stopName) + '"></option>').join('');
+        } catch (err) {}
+      }, 250));
+    }
+    function debounce(fn, ms) {
+      let t; return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
+    }
+
+    /* ---------- GPS: Bahnhof in der Nähe als Startbahnhof ---------- */
+    function detectOriginByGps() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        if ($('origin').value.trim()) return;
+        try {
+          const stop = await api('/api/trains/stops/nearby?lat=' + pos.coords.latitude.toFixed(5) + '&lon=' + pos.coords.longitude.toFixed(5));
+          if (stop && stop.stopName && !$('origin').value.trim()) {
+            $('origin').value = stop.stopName;
+            toast('Startbahnhof per GPS: ' + stop.stopName, 'ok');
+          }
+        } catch (e) {}
+      }, () => {}, { timeout: 8000, maximumAge: 600000 });
+    }
+
+    /* ---------- init ---------- */
+    $('date').value = localDateStr(new Date());
+    $('timeFrom').value = localTimeStr(new Date());
+    $('searchBtn').onclick = doSearch;
+    $('lotteryBtn').onclick = () => { $('origin').value = ''; $('destination').value = ''; doSearch(); };
+    $('simulateBtn').onclick = simulate;
+    $('refreshMapBtn').onclick = () => loadSegment(state.currentSegmentId);
+    $('backToResultsBtn').onclick = backToResults;
+    $('swapBtn').onclick = () => {
+      const a = $('origin').value;
+      $('origin').value = $('destination').value;
+      $('destination').value = a;
+    };
+    setupAutocomplete('origin', 'stops-origin');
+    setupAutocomplete('destination', 'stops-dest');
+    setBadges();
+    doSearch();
+    detectOriginByGps();
+  </script>
+</body>
+</html>

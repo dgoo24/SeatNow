@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name")
+  phone        String?
+  role         UserRole  @default(USER)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  bookings     Booking[]
+
+  @@map("users")
+}
+
+model Route {
+  id        String @id @default(uuid()) @db.Uuid
+  routeId   String @unique @map("route_id")
+  routeName String @map("route_name")
+  routeType Int?   @map("route_type")
+  trips     Trip[]
+
+  @@map("routes")
+}
+
+model Stop {
+  id       String @id @default(uuid()) @db.Uuid
+  stopId   String @unique @map("stop_id")
+  stopName String @map("stop_name")
+  lat      Float?
+  lon      Float?
+
+  @@map("stops")
+}
+
+model Trip {
+  id              String            @id @default(uuid()) @db.Uuid
+  tripId          String            @unique @map("trip_id")
+  routeId         String?           @map("route_id")
+  routeName       String            @map("route_name")
+  originStop      String            @map("origin_stop")
+  destinationStop String            @map("destination_stop")
+  departureTime   String            @map("departure_time")
+  arrivalTime     String            @map("arrival_time")
+  durationMinutes Int?              @map("duration_minutes")
+  price           Decimal           @db.Decimal(10, 2)
+  serviceDate     DateTime?         @map("service_date") @db.Date
+  createdAt       DateTime          @default(now()) @map("created_at")
+  bookings        Booking[]
+  seats           Seat[]
+  segments        Segment[]
+  serviceDates    TripServiceDate[]
+  stops           TripStop[]
+  route           Route?            @relation(fields: [routeId], references: [routeId])
+
+  @@index([originStop, destinationStop])
+  @@index([departureTime])
+  @@map("trips")
+}
+
+model TripStop {
+  id            String  @id @default(uuid()) @db.Uuid
+  tripId        String  @map("trip_id") @db.Uuid
+  stopId        String  @map("stop_id")
+  stopName      String  @map("stop_name")
+  arrivalTime   String? @map("arrival_time")
+  departureTime String? @map("departure_time")
+  stopSequence  Int     @map("stop_sequence")
+  trip          Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, stopSequence])
+  @@index([stopId])
+  @@index([stopName])
+  @@map("trip_stops")
+}
+
+model TripServiceDate {
+  id          String   @id @default(uuid()) @db.Uuid
+  tripId      String   @map("trip_id") @db.Uuid
+  serviceDate DateTime @map("service_date") @db.Date
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, serviceDate])
+  @@index([serviceDate])
+  @@map("trip_service_dates")
+}
+
+model Segment {
+  id                  String    @id @default(uuid()) @db.Uuid
+  tripId              String    @map("trip_id") @db.Uuid
+  originStopName      String    @map("origin_stop_name")
+  destinationStopName String    @map("destination_stop_name")
+  originSequence      Int       @map("origin_sequence")
+  destinationSequence Int       @map("destination_sequence")
+  departureTime       String    @map("departure_time")
+  arrivalTime         String    @map("arrival_time")
+  durationMinutes     Int?      @map("duration_minutes")
+  distanceKm          Float     @default(0) @map("distance_km")
+  price               Decimal   @db.Decimal(10, 2)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  bookings            Booking[]
+  trip                Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, originSequence, destinationSequence])
+  @@index([tripId])
+  @@map("segments")
+}
+
+model Seat {
+  id         String     @id @default(uuid()) @db.Uuid
+  tripId     String     @map("trip_id") @db.Uuid
+  seatNumber String     @map("seat_number")
+  carNumber  Int        @default(1) @map("car_number")
+  status     SeatStatus @default(AVAILABLE)
+  bookings   Booking[]
+  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, carNumber, seatNumber])
+  @@index([tripId])
+  @@map("seats")
+}
+
+model Booking {
+  id                    String        @id @default(uuid()) @db.Uuid
+  userId                String        @map("user_id") @db.Uuid
+  tripId                String        @map("trip_id") @db.Uuid
+  seatId                String        @map("seat_id") @db.Uuid
+  status                BookingStatus @default(PENDING_PAYMENT)
+  stripePaymentIntentId String?       @map("stripe_payment_intent_id")
+  qrPayload             String?       @map("qr_payload")
+  totalAmount           Decimal       @default(0) @map("total_amount") @db.Decimal(10, 2)
+  failureReason         String?       @map("failure_reason")
+  expiresAt             DateTime?     @map("expires_at")
+  // Check-in digital (QR / boton en la app) realizado por el pasajero.
+  isCheckedIn           Boolean       @default(false) @map("is_checked_in")
+  checkedInAt           DateTime?     @map("checked_in_at")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  segmentId             String        @map("segment_id") @db.Uuid
+  seat                  Seat          @relation(fields: [seatId], references: [id])
+  segment               Segment       @relation(fields: [segmentId], references: [id])
+  trip                  Trip          @relation(fields: [tripId], references: [id])
+  user                  User          @relation(fields: [userId], references: [id])
+
+  @@index([tripId, seatId])
+  @@index([status])
+  @@index([userId])
+  @@map("bookings")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  BOOKED
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  FAILED
+  CANCELLED
+  // No-Check-in tras Abfahrt: Sitzplatz fuer Folgestrecken freigegeben.
+  NO_SHOW
+  // Zugausfall ohne Ersatz: Rueckerstattung/Kompensation ausstehend.
+  CANCEL_PENDING_REFUND
+}
