@@ -1,0 +1,14 @@
+target-version = "py310"
+line-length = 120
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    # `datetime.UTC` requiere Python 3.11; la app soporta 3.10.
+    "UP017",
+    # La raya larga (–) es tipografía intencionada en los textos German.
+    "RUF001",
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]

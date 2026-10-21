@@ -1,0 +1,25 @@
+# Tema "SeatNow" · replica la paleta ferroviaria del dashboard (backend/public/index.html)
+
+[theme]
+base = "dark"
+primaryColor = "#ec0016"
+backgroundColor = "#0b0d14"
+secondaryBackgroundColor = "#151a2a"
+textColor = "#eef1f8"
+linkColor = "#7dabff"
+codeTextColor = "#eef1f8"
+codeBackgroundColor = "#101527"
+borderColor = "#262e47"
+dataframeBorderColor = "#262e47"
+dataframeHeaderBackgroundColor = "#151a2a"
+baseRadius = "0.5rem"
+showWidgetBorder = true
+
+font = "'Roboto':https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+headingFont = "'Roboto Condensed':https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@600;700&display=swap"
+codeFont = "'Roboto Mono':https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500;700&display=swap"
+
+[theme.sidebar]
+backgroundColor = "#0f1220"
+secondaryBackgroundColor = "#101527"
+borderColor = "#1d2440"

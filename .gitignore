@@ -26,6 +26,16 @@ npm-debug.log*
 # Prisma
 backend/prisma/*.db
 
+# Python / Streamlit
+__pycache__/
+*.py[cod]
+.venv/
+data/
+*.db
+*.db-wal
+*.db-shm
+.streamlit/secrets.toml
+
 # OS
 .DS_Store
 Thumbs.db
