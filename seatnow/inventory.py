@@ -35,6 +35,7 @@ def trip_snapshot(feed: gtfs.Feed, trip_id: str, segment_id: str) -> str:
     segment = feed.segments.get(segment_id)
     data = {
         "route_name": trip.route_name if trip else "",
+        "train_number": trip.train_number if trip else "",
         "origin_stop": segment.origin_stop if segment else "",
         "destination_stop": segment.destination_stop if segment else "",
         "departure": segment.departure if segment else "",

@@ -71,6 +71,8 @@ def search_trains(
                 "trip_id": trip.trip_id,
                 "route_name": trip.route_name,
                 "train": train_label(trip.route_name),
+                "train_number": trip.train_number,
+                "train_display": trip.train_display,
                 "origin_stop": segment.origin_stop,
                 "destination_stop": segment.destination_stop,
                 "departure": segment.departure,

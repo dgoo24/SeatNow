@@ -16,7 +16,7 @@ from seatnow.theme import (
     hint_html,
     route_html,
     time_html,
-    train_kind_html,
+    train_html,
 )
 from seatnow.ui import open_trip
 
@@ -141,13 +141,13 @@ with st.container(border=True):
     )
 
 
-def _run_db_search() -> list[dict]:
+def _run_db_search() -> None:
     """Resuelve las estaciones y busca conexiones reales en la DB API."""
     origin_name = (st.session_state.get("search_origin_text") or "").strip()
     destination_name = (st.session_state.get("search_destination_text") or "").strip()
     if not origin_name:
         st.error("Bitte einen Startbahnhof eingeben.", icon=":material/error:")
-        return []
+        return
 
     with st.spinner("Verbindungen werden bei der Deutschen Bahn abgerufen …"):
         origin_station = dbfeed.resolve_station(origin_name)
@@ -158,7 +158,7 @@ def _run_db_search() -> list[dict]:
             f"Bahnhof „{origin_name}“ nicht gefunden. Versuche eine andere Schreibweise.",
             icon=":material/search_off:",
         )
-        return []
+        return
     if destination_name and destination_station is None:
         st.warning(
             f"Bahnhof „{destination_name}“ nicht gefunden – es wird ohne Ziel gesucht.",
@@ -175,6 +175,7 @@ def _run_db_search() -> list[dict]:
             time_type="departure" if time_type == "Abfahrt ab" else "arrival",
         )
     set_active_feed(db_feed, "db")
+    st.session_state["search_results"] = results
     st.session_state["search_params"] = {
         "origin": origin_station.name,
         "destination": destination_station.name if destination_station else None,
@@ -183,13 +184,15 @@ def _run_db_search() -> list[dict]:
         "time_from": time_from.hour * 60 + time_from.minute if time_from else None,
         "time_to": time_to.hour * 60 + time_to.minute if time_to else None,
     }
-    return results
+    # La cabecera (contadores y fuente de datos) se dibuja al empezar la app:
+    # un rerun la refresca con los datos reales de la DB.
+    st.rerun()
 
 
 trigger = st.session_state.pop("_do_search", False)
 if clicked_search or trigger:
     if DB_MODE:
-        st.session_state["search_results"] = _run_db_search()
+        _run_db_search()
     else:
         st.session_state["search_params"] = {
             "origin": origin or None,
@@ -223,15 +226,18 @@ with st.container(border=True):
         )
     )
 
-    head = st.columns([1.1, 2.3, 1.4, 0.9, 0.8, 0.9])
+    head = st.columns([1.3, 2.3, 1.4, 0.9, 0.8, 0.9])
     for col, label in zip(head, ["Zug", "Verbindung", "Ab / An", "Dauer", "Frei", ""], strict=False):
         col.html(f'<div class="sn-th">{label}</div>')
 
     for index, result in enumerate(results):
         state = inventory.availability_for_segment(feed, result["segment_id"])
         free = inventory.count_available(state)
-        row = st.columns([1.1, 2.3, 1.4, 0.9, 0.8, 0.9], vertical_alignment="center")
-        row[0].html(f'<div class="sn-td">{train_kind_html(result["train"])}</div>')
+        row = st.columns([1.3, 2.3, 1.4, 0.9, 0.8, 0.9], vertical_alignment="center")
+        row[0].html(
+            f'<div class="sn-td">'
+            f'{train_html(result["train"], result.get("train_number", ""))}</div>'
+        )
         row[1].html(
             f'<div class="sn-td">{route_html(result["origin_stop"], result["destination_stop"])}</div>'
         )

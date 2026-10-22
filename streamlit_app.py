@@ -12,13 +12,14 @@ import streamlit as st
 
 from seatnow import dbapi, inventory, store
 from seatnow.loader import active_feed
-from seatnow.theme import footer_html, header_html, inject
-from seatnow.ui import current_user, init_state, render_sidebar
+from seatnow.theme import footer_html, inject
+from seatnow.ui import init_state, render_header, render_nav
 
 st.set_page_config(
     page_title="SeatNow · Sitzplatz buchen",
     page_icon=":material/train:",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 init_state()
@@ -35,26 +36,22 @@ if time.time() - st.session_state.get("_last_sweep", 0) > 30:
 # Estilo del dashboard (backend/public/index.html).
 inject()
 
-# La cabecera y la barra lateral se rellenan después de la página: así una
-# búsqueda en la DB ya se refleja en los contadores y en la fuente de datos.
-header_slot = st.empty()
-sidebar_slot = st.sidebar.empty()
+# La navegación se dibuja a mano dentro de la cabecera (sin barra lateral).
+PAGES = [
+    st.Page("app_pages/buscar.py", title="Verbindung suchen", icon=":material/search:"),
+    st.Page("app_pages/wagen.py", title="Wagen & Sitzplatz", icon=":material/event_seat:"),
+    st.Page("app_pages/reservas.py", title="Meine Reservierungen", icon=":material/confirmation_number:"),
+    st.Page("app_pages/admin.py", title="Administration", icon=":material/admin_panel_settings:"),
+]
 
-navigation = st.navigation(
-    [
-        st.Page("app_pages/buscar.py", title="Verbindung suchen", icon=":material/search:"),
-        st.Page("app_pages/wagen.py", title="Wagen & Sitzplatz", icon=":material/event_seat:"),
-        st.Page("app_pages/reservas.py", title="Meine Reservierungen", icon=":material/confirmation_number:"),
-        st.Page("app_pages/admin.py", title="Administration", icon=":material/admin_panel_settings:"),
-    ]
-)
-navigation.run()
+page = st.navigation(PAGES, position="hidden")
 
-feed = active_feed()
 source = "db" if dbapi.available() else "demo"
-with sidebar_slot.container():
-    render_sidebar(feed, source)
-with header_slot.container():
-    st.html(header_html(feed, current_user(), source))
+render_header(feed, source)
+
+# La navegación vive dentro del dashboard (no en la barra lateral).
+render_nav(PAGES, page)
+
+page.run()
 
 st.html(footer_html(source))

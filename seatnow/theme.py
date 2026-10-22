@@ -15,6 +15,7 @@ from typing import Any
 import streamlit as st
 
 from seatnow.config import CAR_COUNT, MAIL_MODE, PAYMENTS_MODE, SEATS_PER_CAR
+from seatnow.format import local_now
 
 # `st.html` sanea el contenido con DOMPurify, que elimina el SVG inline.
 # Por eso el logo se inyecta como data-URI dentro del CSS (el CSS no se sanea).
@@ -68,26 +69,34 @@ html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"],
     var(--bg2) !important;
   border-right: 1px solid var(--border-soft);
 }
-[data-testid="stHeader"] {
-  background: rgba(11, 13, 20, .92) !important;
-  border-bottom: 1px solid var(--border-soft);
+/* La barra superior nativa estorba: la app usa su propia cabecera. */
+[data-testid="stHeader"] { display: none !important; }
+[data-testid="stMain"] { padding-top: 0; }
+/* Contenido centrado a 1080px como el `main` del HTML. */
+[data-testid="stMainBlockContainer"] {
+  max-width: 1080px !important;
+  margin: 0 auto !important;
+  padding: 0 20px 60px !important;
 }
-[data-testid="stMain"] { padding-top: 1.2rem; }
 h1, h2, h3, h4, h5, h6 { font-family: var(--cond) !important; letter-spacing: .01em; }
 a { color: #7dabff; }
 
-/* ===== barra superior de marca ===== */
-.sn-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-  padding: 12px 22px; margin: 0 0 22px;
-  position: sticky; top: 0; z-index: 30;
-  background: linear-gradient(180deg, rgba(11,13,20,.97), rgba(11,13,20,.9));
-  backdrop-filter: blur(8px);
+/* ===== cabecera de la app (puerto del <header> del HTML) ===== */
+div[class*="st-key-sn_appbar"] {
+  position: sticky; top: 0; z-index: 40;
+  width: calc(100% + 40px);
+  margin-left: -20px;
+  margin-right: -20px;
+  margin-bottom: 22px;
+  padding: 13px 26px 12px;
+  background: linear-gradient(180deg, rgba(11, 13, 20, .97), rgba(11, 13, 20, .90));
+  border: none;
   border-bottom: 3px solid var(--db-red);
-  border-radius: 0 0 16px 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  border-radius: 0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  backdrop-filter: blur(8px);
 }
-.sn-header::after {
+div[class*="st-key-sn_appbar"]::before {
   content: ''; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px;
   background: linear-gradient(90deg, var(--db-red), #ff5a6a 35%, var(--db-red-dark) 70%, transparent);
 }
@@ -104,11 +113,10 @@ a { color: #7dabff; }
   background-repeat: no-repeat; background-position: center; background-size: contain;
 }
 .sn-title {
-  font-family: var(--cond); font-size: 27px; font-weight: 700; margin: 0;
+  font-family: var(--cond); font-size: 26px; font-weight: 700; margin: 0;
   letter-spacing: .01em; text-transform: uppercase; line-height: 1.05;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.sn-title .dice { color: var(--db-red); }
 .sn-title small {
   display: block; font-family: var(--sans); font-size: 11.5px; font-weight: 400;
   text-transform: none; letter-spacing: .04em; color: var(--muted); margin-top: 3px; white-space: normal;
@@ -121,6 +129,63 @@ a { color: #7dabff; }
 }
 .sn-badge.ok { color: #7ef0bb; border-color: rgba(33,193,122,.4); background: rgba(33,193,122,.10); }
 .sn-badge.warn { color: #ffd67a; border-color: rgba(245,163,0,.4); background: rgba(245,163,0,.10); }
+
+/* ===== navegación dentro del dashboard (st.page_link) ===== */
+div[class*="st-key-sn_pagebar"] {
+  margin: 0 0 20px;
+  padding: 6px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: fit-content;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .25);
+}
+div[class*="st-key-sn_nav_"] .stPageLink,
+div[class*="st-key-sn_nav_"] .stPageLink a { width: auto !important; }
+div[class*="st-key-sn_nav_"] a[data-testid="stPageLink-NavLink"] {
+  text-decoration: none !important;
+  font-family: var(--sans) !important; font-size: 13.5px; font-weight: 600 !important;
+  color: var(--muted) !important;
+  background: rgba(255, 255, 255, .04) !important;
+  border: 1px solid var(--border-soft) !important;
+  border-radius: 999px !important;
+  padding: 7px 14px !important; margin: 0 !important;
+  display: inline-flex !important; align-items: center !important;
+  white-space: nowrap; box-shadow: none !important;
+  transition: color .15s, background .15s, border-color .15s, transform .12s;
+}
+div[class*="st-key-sn_nav_"] a[data-testid="stPageLink-NavLink"] span { color: inherit !important; }
+div[class*="st-key-sn_nav_"] a[data-testid="stPageLink-NavLink"] span[data-testid="stIconMaterial"] {
+  color: inherit !important;
+}
+div[class*="st-key-sn_nav_"] a[data-testid="stPageLink-NavLink"]:hover {
+  color: var(--text) !important; background: rgba(255, 255, 255, .08) !important;
+  border-color: #3a4568 !important; transform: translateY(-1px);
+}
+div[class*="st-key-sn_nav_"][class*="_active"] a[data-testid="stPageLink-NavLink"] {
+  color: #fff !important;
+  background: linear-gradient(160deg, var(--db-red), var(--db-red-dark)) !important;
+  border-color: rgba(255, 255, 255, .18) !important;
+  box-shadow: 0 6px 16px rgba(236, 0, 22, .35) !important;
+}
+
+/* ===== franja de metadatos (bestand, fuente, pago, hora) ===== */
+.sn-meta {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--border-soft);
+  font-size: 12.5px; color: var(--muted);
+}
+.sn-meta-item { display: inline-flex; align-items: baseline; gap: 7px; }
+.sn-meta-item b {
+  font-family: var(--cond); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: #ffb3ba;
+}
+.sn-meta-item span { color: var(--text); }
+
+/* ===== cuenta (cabecera) ===== */
+.sn-account { text-align: right; line-height: 1.25; }
+.sn-account b { display: block; font-size: 13px; color: var(--text); }
+.sn-account span { font-size: 11.5px; color: var(--muted); }
 
 /* ===== tarjetas ===== */
 div[data-testid="stVerticalBlockBorderWrapper"] {
@@ -222,6 +287,15 @@ div[data-testid="stButton"] button[kind="secondary"] { background: #232b45 !impo
 }
 .sn-train-kind.local {
   background: linear-gradient(160deg, #2563eb, #1e40af); box-shadow: 0 3px 10px rgba(37,99,235,.35);
+}
+.sn-train-no {
+  font-family: var(--mono); font-size: 14px; font-weight: 700;
+  color: #ffd0d4; margin-left: 9px; letter-spacing: .05em; white-space: nowrap;
+}
+.sn-train-no small {
+  font-family: var(--sans); font-size: 10px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  margin-right: 5px; vertical-align: 1px;
 }
 .sn-arrow { color: var(--db-red); font-weight: 700; margin: 0 6px; }
 .sn-free { color: var(--green); font-weight: 700; }
@@ -436,7 +510,7 @@ div[data-testid="stAlert"] { border-radius: 14px; }
 
 /* ===== responsivo ===== */
 @media (max-width: 760px) {
-  .sn-header { padding: 12px 16px; }
+  div[class*="st-key-sn_appbar"] { padding: 12px 14px; }
   .sn-title { font-size: 21px; white-space: normal; }
   .sn-trip-title { font-size: 19px; }
   .sn-countdown { font-size: 30px; }
@@ -462,7 +536,7 @@ def brand_html(source: str = "demo") -> str:
     return (
         '<div class="sn-brand">'
         '<div class="sn-mark"></div>'
-        '<h1 class="sn-title">Züge <span class="dice">MVP</span>'
+        '<h1 class="sn-title">SeatNow'
         f"<small>{subtitle}</small>"
         "</h1></div>"
     )
@@ -502,8 +576,34 @@ def badges_html(feed: Any, user: dict[str, Any] | None = None, mode: str = "demo
     return f'<div class="sn-badges">{"".join(items)}</div>'
 
 
+def meta_strip_html(feed: Any, source: str = "demo") -> str:
+    """Franja de metadatos que antes vivía en la barra lateral."""
+    seats = CAR_COUNT * SEATS_PER_CAR
+    items = (
+        (
+            "Bestand",
+            f"{len(feed.trips)} Züge · {len(feed.segments)} Teilstrecken · "
+            f"{seats} Sitzplätze/Zug",
+        ),
+        (
+            "Datenquelle",
+            "DB-Live-Fahrplan" if source == "db" else "GTFS-Demofeed (Spanien)",
+        ),
+        ("Zahlung", f"{PAYMENTS_MODE} · E-Mail: {MAIL_MODE}"),
+        ("Stand", f"{local_now():%d.%m.%Y %H:%M}"),
+        ("Demo", "pasajero1@trenes.local / demo1234"),
+    )
+    parts = [
+        f'<span class="sn-meta-item"><b>{escape(label)}</b>'
+        f"<span>{escape(value)}</span></span>"
+        for label, value in items
+    ]
+    return f'<div class="sn-meta">{"".join(parts)}</div>'
+
+
 def header_html(feed: Any, user: dict[str, Any] | None = None, mode: str = "demo") -> str:
-    return f'<div class="sn-header">{brand_html(mode)}{badges_html(feed, user, mode)}</div>'
+    """Cabecera: marcas de estado + franja de metadatos."""
+    return f"{badges_html(feed, user, mode)}{meta_strip_html(feed, mode)}"
 
 
 def card_title(text: str) -> str:
@@ -517,6 +617,21 @@ def card_head(title: str, right: str = "") -> str:
 def train_kind_html(label: str) -> str:
     kind = "" if label.upper().startswith(("ICE", "IC", "AVE", "TGV")) else " local"
     return f'<span class="sn-train-kind{kind}">{escape(label)}</span>'
+
+
+def train_html(product: str, number: str = "") -> str:
+    """Producto + número de tren: 'ICE' + '799' -> 'ICE 799'."""
+    badge_html = train_kind_html(product)
+    if not number:
+        return badge_html
+    return f'{badge_html}<span class="sn-train-no">{escape(number)}</span>'
+
+
+def train_number_html(number: str) -> str:
+    """Número de tren suelto (para cabeceras y tablas)."""
+    if not number:
+        return ""
+    return f'<span class="sn-train-no">{escape(number)}</span>'
 
 
 def route_html(origin: str, destination: str) -> str:
@@ -612,7 +727,7 @@ def footer_html(source: str = "demo") -> str:
     data = "Streamlit · SQLite · DB Timetables API" if source == "db" else "Streamlit · SQLite · GTFS"
     return (
         '<div class="sn-footer">'
-        '<span><span class="rail">▚</span> MVP Züge · Sitzplatzverwaltung pro Teilstrecke</span>'
+        '<span><span class="rail">▚</span> SeatNow · Sitzplatzverwaltung pro Teilstrecke</span>'
         f"<span>{data}</span>"
         "</div>"
     )

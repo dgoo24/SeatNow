@@ -8,7 +8,7 @@ import time
 import streamlit as st
 
 from seatnow import inventory, store
-from seatnow.format import fmt_clock, fmt_money, local_today, train_label
+from seatnow.format import fmt_clock, fmt_money, local_today, train_label, trip_title
 from seatnow.loader import active_feed
 from seatnow.ui import (
     WAGEN_DEADLINE_KEY,
@@ -53,8 +53,10 @@ def _on_trip_change() -> None:
 
 def _trip_label(trip_id: str) -> str:
     trip = feed.trips[trip_id]
+    train = trip.train_display or train_label(trip.route_name)
+    route = trip.route_display or trip.route_name
     return (
-        f"{train_label(trip.route_name)} · {trip.route_name} · "
+        f"{trip_title(train, route)} · "
         f"{trip.origin_stop} → {trip.destination_stop} ({fmt_clock(trip.departure)})"
     )
 
@@ -128,7 +130,7 @@ with st.container(border=True):
         st.rerun()
 
     st.selectbox(
-        "Zug", trip_ids, key="wagen_trip", format_func=_trip_label, on_change=_on_trip_change
+        "Zug (Nummer)", trip_ids, key="wagen_trip", format_func=_trip_label, on_change=_on_trip_change
     )
     st.selectbox(
         "Teilstrecke (Sitzplätze gelten nur hierfür!)",

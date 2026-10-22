@@ -60,6 +60,22 @@ def train_label(route_name: str) -> str:
     return route_name.split(" - ")[0].strip().upper()
 
 
+def train_display(route_name: str, number: str = "") -> str:
+    """'ICE 799': producto + número de tren (no el nombre de la ruta)."""
+    if number:
+        return f"{train_label(route_name)} {number}"
+    return route_name
+
+
+def trip_title(train: str, route_name: str = "") -> str:
+    """Título de viaje sin repetir: 'ICE 799' + 'ICE 799' -> 'ICE 799'."""
+    train = train.strip()
+    route = route_name.strip()
+    if not route or route == train:
+        return train
+    return f"{train} · {route}"
+
+
 def status_label(status: str) -> str:
     return {
         "PENDING_PAYMENT": "Reserviert (Zahlung offen)",

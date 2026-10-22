@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import csv
 import math
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from seatnow.config import CAR_COUNT, SEATS_PER_CAR
+from seatnow.format import train_label
 
 
 @dataclass(frozen=True)
@@ -61,8 +63,31 @@ class Trip:
     duration_minutes: int
     price: float
     stops: list[TripStop] = field(default_factory=list)
+    # Número de tren (p. ej. '799' en 'ICE 799'). En la DB viene del RIS,
+    # en el feed GTFS de demo se deriva del identificador del viaje.
+    train_number: str = ""
     # Estado en vivo real (DB API). Si es None se simula (feed GTFS de demo).
     live: dict[str, Any] | None = None
+
+    @property
+    def product(self) -> str:
+        """Tipo de producto del tren (ICE, IC, RE, AVE …)."""
+        return train_label(self.route_name)
+
+    @property
+    def train_display(self) -> str:
+        """'ICE 799': producto + número de tren."""
+        if self.train_number:
+            return f"{self.product} {self.train_number}"
+        return self.route_name
+
+    @property
+    def route_display(self) -> str:
+        """Nombre de la ruta, si aporta info más allá del número de tren."""
+        route = self.route_name.strip()
+        if not route or route == self.train_display or route == self.product:
+            return ""
+        return route
 
 
 @dataclass
@@ -139,6 +164,16 @@ def compute_segment_price(distance_km: float) -> float:
     return round(min(max(3.4 + 0.005 * distance_km, 4.90), 5.90), 2)
 
 
+def demo_train_number(trip_id: str) -> str:
+    """Número de tren estable para el feed GTFS de demo (p. ej. '412').
+
+    El feed de ejemplo no trae número de servicio, así que se deriva del
+    identificador del viaje con un hash estable (mismo viaje → mismo número).
+    """
+    digest = zlib.crc32(trip_id.encode("utf-8"))
+    return str(100 + digest % 900)
+
+
 def _distance_between(stops: dict[str, Stop], a: TripStop, b: TripStop) -> float:
     stop_a = stops.get(a.stop_id)
     stop_b = stops.get(b.stop_id)
@@ -212,6 +247,7 @@ def load_feed(directory: Path) -> Feed:
             duration_minutes=duration,
             price=compute_trip_price(duration, len(trip_stops)),
             stops=trip_stops,
+            train_number=demo_train_number(trip_id),
         )
 
         trip_segments: list[Segment] = []

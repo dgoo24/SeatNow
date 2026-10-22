@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import date
 from html import escape
@@ -18,12 +19,14 @@ from seatnow.format import (
     local_today,
     seat_label,
     status_label,
-    train_label,
 )
 from seatnow.theme import (
+    badges_html,
+    brand_html,
     chips_html,
     legend_html,
     live_box_html,
+    meta_strip_html,
     seat_css,
 )
 
@@ -85,56 +88,68 @@ def require_admin() -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Barra lateral
+# Cabecera
 # --------------------------------------------------------------------------- #
 
-def render_sidebar(feed: gtfs.Feed, source: str = "demo", container: Any = None) -> None:
-    """Barra lateral. `source` indica de dónde salen los datos ('db' o 'demo')."""
-    target = container if container is not None else st.sidebar
-    with target:
-        st.markdown("### :material/train: SeatNow")
-        st.caption("Sitzplatzreservierung · Teilstrecken")
+def _nav_key(page: Any, active: bool) -> str:
+    """Clave CSS del enlace de navegación (la activa lleva sufijo)."""
+    slug = re.sub(r"[^a-z0-9]+", "_", page.title.lower()).strip("_")
+    return f"sn_nav_{slug}_active" if active else f"sn_nav_{slug}"
 
-        user = current_user()
-        if user:
-            st.markdown(f"**{user['full_name']}**")
-            st.caption(user["email"])
-            if st.button("Abmelden", icon=":material/logout:", width="stretch"):
+
+def render_nav(pages: list[Any], current: Any) -> None:
+    """Navegación principal dentro del dashboard (sin barra lateral)."""
+    with st.container(horizontal=True, gap="small", key="sn_pagebar"):
+        for page in pages:
+            active = current is not None and page.title == current.title
+            with st.container(key=_nav_key(page, active)):
+                st.page_link(page, label=page.title, icon=page.icon, width="content")
+
+
+def render_account() -> None:
+    """Control de cuenta de la cabecera (login / logout)."""
+    user = current_user()
+    if user:
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.html(
+                '<div class="sn-account">'
+                f"<b>{escape(user['full_name'])}</b>"
+                f"<span>{escape(user['email'])}</span></div>"
+            )
+            if st.button("Abmelden", icon=":material/logout:", key="sign_out"):
                 sign_out()
                 st.rerun()
-        else:
-            with st.expander("Anmelden / registrieren", icon=":material/login:"):
-                email = st.text_input(
-                    "E-Mail", key="auth_email", placeholder="pasajero1@trenes.local"
-                )
-                password = st.text_input("Passwort", type="password", key="auth_password")
-                with st.container(horizontal=True):
-                    if st.button("Anmelden", icon=":material/login:", width="stretch"):
-                        if sign_in(email, password):
-                            st.rerun()
-                        else:
-                            st.error("E-Mail oder Passwort ist falsch.")
-                    if st.button("Registrieren", icon=":material/person_add:", width="stretch"):
-                        if store.create_user(email, password, email.split("@")[0]):
-                            sign_in(email, password)
-                            st.rerun()
-                        else:
-                            st.error("Diese E-Mail ist bereits registriert.")
-            st.caption("Demo: `pasajero1@trenes.local` / `demo1234`")
+        return
 
-        st.space("small")
-        st.markdown("**Bestand**")
-        seats = len(feed.trips) and CAR_COUNT * SEATS_PER_CAR
-        st.caption(
-            f"{len(feed.trips)} Züge · {len(feed.segments)} Teilstrecken · {seats} Sitzplätze/Zug"
-        )
-        st.caption(
-            "Datenquelle: DB-Live-Fahrplan"
-            if source == "db"
-            else "Datenquelle: GTFS-Demofeed (Spanien)"
-        )
-        st.caption("Zahlung: mock · E-Mail: deaktiviert")
-        st.caption(f"Stand: {local_now():%d.%m.%Y %H:%M}")
+    with st.popover("Anmelden / registrieren", icon=":material/login:", width="content"):
+        email = st.text_input("E-Mail", key="auth_email", placeholder="pasajero1@trenes.local")
+        password = st.text_input("Passwort", type="password", key="auth_password")
+        with st.container(horizontal=True):
+            if st.button("Anmelden", icon=":material/login:", width="stretch"):
+                if sign_in(email, password):
+                    st.rerun()
+                else:
+                    st.error("E-Mail oder Passwort ist falsch.")
+            if st.button("Registrieren", icon=":material/person_add:", width="stretch"):
+                if store.create_user(email, password, email.split("@")[0]):
+                    sign_in(email, password)
+                    st.rerun()
+                else:
+                    st.error("Diese E-Mail ist bereits registriert.")
+        st.caption("Demo: `pasajero1@trenes.local` / `demo1234`")
+
+
+def render_header(feed: gtfs.Feed, source: str = "demo") -> None:
+    """Cabecera de la app: marca, estado y cuenta (puerto del `header` del HTML)."""
+    with st.container(key="sn_appbar"):
+        top = st.columns([2.2, 1.5, 1.1], vertical_alignment="center")
+        with top[0]:
+            st.html(brand_html(source))
+        with top[1]:
+            st.html(badges_html(feed, current_user(), source))
+        with top[2]:
+            render_account()
+        st.html(meta_strip_html(feed, source))
 
 
 # --------------------------------------------------------------------------- #
@@ -142,13 +157,20 @@ def render_sidebar(feed: gtfs.Feed, source: str = "demo", container: Any = None)
 # --------------------------------------------------------------------------- #
 
 def trip_header_html(trip: gtfs.Trip, segment: gtfs.Segment) -> str:
-    label = train_label(trip.route_name)
+    """Cabecera del viaje: número de tren + tramo + horario."""
+    title = trip.train_display or trip.route_name
+    meta = [
+        f"Abfahrt {fmt_clock(segment.departure)}",
+        f"Ankunft {fmt_clock(segment.arrival)}",
+        f"{len(trip.stops)} Halte",
+    ]
+    if trip.route_display:
+        meta.insert(0, trip.route_display)
     return (
         '<div class="sn-trip-top"><div>'
         '<p class="sn-card-title">Wagenansicht · Teilstrecke</p>'
-        f'<h2 class="sn-trip-title">{escape(label)} · {escape(trip.route_name)}</h2>'
-        f'<div class="sn-trip-meta">Abfahrt {escape(fmt_clock(segment.departure))} · '
-        f"Ankunft {escape(fmt_clock(segment.arrival))} · {len(trip.stops)} Halte</div>"
+        f'<h2 class="sn-trip-title">{escape(title)}</h2>'
+        f'<div class="sn-trip-meta">{" · ".join(escape(part) for part in meta)}</div>'
         "</div></div>"
     )
 

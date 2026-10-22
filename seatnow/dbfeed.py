@@ -656,6 +656,7 @@ def _build_trip(
         duration_minutes=duration,
         price=gtfs.compute_trip_price(duration, len(trip_stops)),
         stops=trip_stops,
+        train_number=event.number,
         live={
             "delay_minutes": event.delay_minutes,
             "platform": event.platform,
@@ -750,6 +751,8 @@ def search(
                 "trip_id": trip.trip_id,
                 "route_name": trip.route_name,
                 "train": train_label(trip.route_name),
+                "train_number": trip.train_number,
+                "train_display": trip.train_display,
                 "origin_stop": segment.origin_stop,
                 "destination_stop": segment.destination_stop,
                 "departure": segment.departure,

@@ -7,7 +7,7 @@ from html import escape
 import streamlit as st
 
 from seatnow import inventory, store
-from seatnow.format import fmt_clock, fmt_money, seat_label, train_label
+from seatnow.format import fmt_clock, fmt_money, seat_label, train_label, trip_title
 from seatnow.loader import active_feed
 from seatnow.qr import qr_png
 from seatnow.theme import card_head, qr_box_html
@@ -59,10 +59,14 @@ for booking in visible:
     departure = segment.departure if segment else snapshot.get("departure", "")
     arrival = segment.arrival if segment else snapshot.get("arrival", "")
     route_name = trip.route_name if trip else snapshot.get("route_name", "")
+    train_number = trip.train_number if trip else snapshot.get("train_number", "")
+    train_name = (trip.train_display if trip else "") or train_label(route_name)
+    if train_number and train_number not in train_name:
+        train_name = f"{train_name} {train_number}"
 
     with st.container(border=True):
         head = st.columns([3, 2, 1.4, 1], vertical_alignment="center")
-        head[0].markdown(f"**{train_label(route_name)} · {route_name}**")
+        head[0].markdown(f"**{trip_title(train_name, route_name)}**")
         head[1].markdown(f"{origin_stop} → {destination_stop}")
         head[2].markdown(f"{fmt_clock(departure)} – {fmt_clock(arrival)}")
         head[3].markdown(status_badge(booking["status"]))

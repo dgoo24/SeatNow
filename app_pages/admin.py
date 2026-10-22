@@ -7,7 +7,7 @@ import random
 import streamlit as st
 
 from seatnow import inventory, store
-from seatnow.format import fmt_money, seat_label, train_label
+from seatnow.format import fmt_money, seat_label, train_label, trip_title
 from seatnow.loader import active_feed
 from seatnow.theme import card_head
 from seatnow.ui import require_admin
@@ -117,12 +117,16 @@ with st.container(border=True):
             trip = feed.trips.get(booking["trip_id"])
             snapshot = inventory.booking_snapshot(booking)
             route_name = trip.route_name if trip else snapshot.get("route_name", "")
+            train_number = trip.train_number if trip else snapshot.get("train_number", "")
+            train_name = (trip.train_display if trip else "") or train_label(route_name)
+            if train_number and train_number not in train_name:
+                train_name = f"{train_name} {train_number}"
             origin_stop = segment.origin_stop if segment else snapshot.get("origin_stop", "")
             destination_stop = segment.destination_stop if segment else snapshot.get("destination_stop", "")
             rows.append(
                 {
                     "Buchung": booking["id"][:8].upper(),
-                    "Zug": f"{train_label(route_name)} {route_name}".strip() if route_name else booking["trip_id"],
+                    "Zug": trip_title(train_name, route_name) if route_name else booking["trip_id"],
                     "Teilstrecke": f"{origin_stop} → {destination_stop}" if origin_stop else "–",
                     "Sitzplatz": seat_label(booking["seat_id"]),
                     "Status": booking["status"],
