@@ -78,27 +78,39 @@ html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"],
   margin: 0 auto !important;
   padding: 0 20px 60px !important;
 }
-h1, h2, h3, h4, h5, h6 { font-family: var(--cond) !important; letter-spacing: .01em; }
-a { color: #7dabff; }
+h1, h2, h3, h4, h5, h6 { font-family: var(--cond) !important; letter-spacing: .02em; }
+a { color: #9fc3ff; }
 
-/* ===== cabecera de la app (puerto del <header> del HTML) ===== */
+/* ===== cabecera de la app (estilo DB) ===== */
 div[class*="st-key-sn_appbar"] {
   position: sticky; top: 0; z-index: 40;
   width: calc(100% + 40px);
   margin-left: -20px;
   margin-right: -20px;
-  margin-bottom: 22px;
-  padding: 13px 26px 12px;
-  background: linear-gradient(180deg, rgba(11, 13, 20, .97), rgba(11, 13, 20, .90));
+  margin-bottom: 18px;
+  padding: 10px 26px 10px;
+  background:
+    radial-gradient(900px 220px at 90% -140px, rgba(236, 0, 22, .14), transparent 60%),
+    linear-gradient(180deg, rgba(12, 15, 26, .98), rgba(9, 11, 18, .96));
   border: none;
-  border-bottom: 3px solid var(--db-red);
+  border-bottom: 2px solid var(--db-red);
   border-radius: 0;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(10px);
 }
 div[class*="st-key-sn_appbar"]::before {
-  content: ''; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px;
-  background: linear-gradient(90deg, var(--db-red), #ff5a6a 35%, var(--db-red-dark) 70%, transparent);
+  content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+  background: linear-gradient(90deg, var(--db-red), #ff6b7a 40%, transparent 85%);
+}
+div[class*="st-key-sn_appbar"] [data-testid="stHorizontalBlock"] {
+  align-items: center;
+}
+div[class*="st-key-sn_appbar"] [data-testid="column"] {
+  display: flex;
+  align-items: center;
+}
+div[class*="st-key-sn_appbar"] [data-testid="column"]:nth-child(3) {
+  justify-content: flex-end;
 }
 .sn-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .sn-mark {
@@ -130,27 +142,34 @@ div[class*="st-key-sn_appbar"]::before {
 .sn-badge.ok { color: #7ef0bb; border-color: rgba(33,193,122,.4); background: rgba(33,193,122,.10); }
 .sn-badge.warn { color: #ffd67a; border-color: rgba(245,163,0,.4); background: rgba(245,163,0,.10); }
 
-/* ===== navegación dentro del dashboard (st.page_link) ===== */
+/* ===== navegación dentro del dashboard (barra tipo DB) ===== */
 div[class*="st-key-sn_pagebar"] {
-  margin: 0 0 20px;
-  padding: 6px;
-  background: var(--panel2);
+  margin: 0 0 16px;
+  padding: 4px 6px;
+  background: radial-gradient(600px 80px at 50% -40px, rgba(236, 0, 22, .10), transparent 70%),
+              linear-gradient(180deg, rgba(22, 26, 44, .9), rgba(14, 17, 30, .9));
   border: 1px solid var(--border);
-  border-radius: 14px;
-  width: fit-content;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, .25);
+  border-radius: 12px;
+  width: 100%;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .32);
+  justify-content: center;
 }
-div[class*="st-key-sn_nav_"] .stPageLink,
+div[class*="st-key-sn_pagebar"] [data-testid="stHorizontalBlock"] {
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
 div[class*="st-key-sn_nav_"] .stPageLink a { width: auto !important; }
 div[class*="st-key-sn_nav_"] a[data-testid="stPageLink-NavLink"] {
   text-decoration: none !important;
-  font-family: var(--sans) !important; font-size: 13.5px; font-weight: 600 !important;
+  font-family: var(--cond) !important; font-size: 13.5px; font-weight: 700 !important;
+  text-transform: uppercase; letter-spacing: .08em;
   color: var(--muted) !important;
-  background: rgba(255, 255, 255, .04) !important;
-  border: 1px solid var(--border-soft) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
   border-radius: 999px !important;
-  padding: 7px 14px !important; margin: 0 !important;
-  display: inline-flex !important; align-items: center !important;
+  padding: 8px 18px !important; margin: 0 !important;
+  display: inline-flex !important; align-items: center !important; gap: 8px !important;
   white-space: nowrap; box-shadow: none !important;
   transition: color .15s, background .15s, border-color .15s, transform .12s;
 }
@@ -159,14 +178,14 @@ div[class*="st-key-sn_nav_"] a[data-testid="stPageLink-NavLink"] span[data-testi
   color: inherit !important;
 }
 div[class*="st-key-sn_nav_"] a[data-testid="stPageLink-NavLink"]:hover {
-  color: var(--text) !important; background: rgba(255, 255, 255, .08) !important;
-  border-color: #3a4568 !important; transform: translateY(-1px);
+  color: var(--text) !important; background: rgba(255, 255, 255, .06) !important;
+  border-color: rgba(255, 255, 255, .12) !important; transform: translateY(-1px);
 }
 div[class*="st-key-sn_nav_"][class*="_active"] a[data-testid="stPageLink-NavLink"] {
   color: #fff !important;
   background: linear-gradient(160deg, var(--db-red), var(--db-red-dark)) !important;
-  border-color: rgba(255, 255, 255, .18) !important;
-  box-shadow: 0 6px 16px rgba(236, 0, 22, .35) !important;
+  border-color: rgba(255, 255, 255, .22) !important;
+  box-shadow: 0 8px 18px rgba(236, 0, 22, .38) !important;
 }
 
 /* ===== franja de metadatos (bestand, fuente, pago, hora) ===== */
@@ -189,16 +208,18 @@ div[class*="st-key-sn_nav_"][class*="_active"] a[data-testid="stPageLink-NavLink
 
 /* ===== tarjetas ===== */
 div[data-testid="stVerticalBlockBorderWrapper"] {
-  background: linear-gradient(180deg, var(--panel), var(--panel2));
+  background:
+    radial-gradient(700px 200px at 90% -80px, rgba(236, 0, 22, .10), transparent 60%),
+    linear-gradient(180deg, rgba(26, 30, 52, .98), rgba(16, 20, 36, .98));
   border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: 0 18px 44px rgba(0,0,0,.38);
+  border-radius: 16px;
+  box-shadow: 0 22px 50px rgba(0,0,0,.44);
   position: relative;
   overflow: hidden;
 }
 div[data-testid="stVerticalBlockBorderWrapper"]::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--db-red), transparent 55%);
+  background: linear-gradient(90deg, var(--db-red), transparent 65%);
 }
 .sn-card-title {
   font-family: var(--cond); text-transform: uppercase; letter-spacing: .08em;
