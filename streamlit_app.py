@@ -10,8 +10,8 @@ import time
 
 import streamlit as st
 
-from seatnow import inventory, store
-from seatnow.loader import load_feed
+from seatnow import dbapi, inventory, store
+from seatnow.loader import active_feed
 from seatnow.theme import footer_html, header_html, inject
 from seatnow.ui import current_user, init_state, render_sidebar
 
@@ -24,7 +24,7 @@ st.set_page_config(
 init_state()
 store.init_db()
 
-feed = load_feed()
+feed = active_feed()
 
 # Barrido de holds caducados y no-shows (como los timers del backend).
 if time.time() - st.session_state.get("_last_sweep", 0) > 30:
@@ -35,10 +35,10 @@ if time.time() - st.session_state.get("_last_sweep", 0) > 30:
 # Estilo del dashboard (backend/public/index.html).
 inject()
 
-render_sidebar(feed)
-
-# Barra superior con la marca y los badges del servicio.
-st.html(header_html(feed, current_user()))
+# La cabecera y la barra lateral se rellenan después de la página: así una
+# búsqueda en la DB ya se refleja en los contadores y en la fuente de datos.
+header_slot = st.empty()
+sidebar_slot = st.sidebar.empty()
 
 navigation = st.navigation(
     [
@@ -50,4 +50,11 @@ navigation = st.navigation(
 )
 navigation.run()
 
-st.html(footer_html())
+feed = active_feed()
+source = "db" if dbapi.available() else "demo"
+with sidebar_slot.container():
+    render_sidebar(feed, source)
+with header_slot.container():
+    st.html(header_html(feed, current_user(), source))
+
+st.html(footer_html(source))

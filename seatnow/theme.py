@@ -453,12 +453,17 @@ def inject() -> None:
 # Builders de HTML
 # --------------------------------------------------------------------------- #
 
-def brand_html() -> str:
+def brand_html(source: str = "demo") -> str:
+    subtitle = (
+        "Sitzplätze pro Teilstrecke · live Fahrpläne der Deutschen Bahn"
+        if source == "db"
+        else "Sitzplätze pro Teilstrecke · ICE/IC über Fulda · echte GTFS-Daten"
+    )
     return (
         '<div class="sn-brand">'
         '<div class="sn-mark"></div>'
         '<h1 class="sn-title">Züge <span class="dice">MVP</span>'
-        "<small>Sitzplätze pro Teilstrecke · ICE/IC über Fulda · echte GTFS-Daten</small>"
+        f"<small>{subtitle}</small>"
         "</h1></div>"
     )
 
@@ -468,17 +473,28 @@ def badge(text: str, kind: str = "") -> str:
     return f'<span class="{cls}">{escape(text)}</span>'
 
 
-def badges_html(feed: Any, user: dict[str, Any] | None = None) -> str:
+def badges_html(feed: Any, user: dict[str, Any] | None = None, mode: str = "demo") -> str:
     seats = CAR_COUNT * SEATS_PER_CAR
-    items = [
-        badge("GTFS Import", "ok"),
-        badge(f"{len(feed.trips)} ICE/IC"),
-        badge(f"{len(feed.segments)} Teilstrecken"),
-        badge(f"{seats} Sitzplätze"),
-        badge("1 Betriebstag"),
-        badge(f"Zahlungen {PAYMENTS_MODE}"),
-        badge(f"E-Mail {MAIL_MODE}", "warn"),
-    ]
+    if mode == "db":
+        items = [
+            badge("DB Live-Fahrplan", "ok"),
+            badge(f"{len(feed.trips)} Züge"),
+            badge(f"{len(feed.segments)} Teilstrecken"),
+            badge(f"{seats} Sitzplätze"),
+            badge("Verspätungen live"),
+            badge(f"Zahlungen {PAYMENTS_MODE}"),
+            badge(f"E-Mail {MAIL_MODE}", "warn"),
+        ]
+    else:
+        items = [
+            badge("GTFS Import", "ok"),
+            badge(f"{len(feed.trips)} ICE/IC"),
+            badge(f"{len(feed.segments)} Teilstrecken"),
+            badge(f"{seats} Sitzplätze"),
+            badge("1 Betriebstag"),
+            badge(f"Zahlungen {PAYMENTS_MODE}"),
+            badge(f"E-Mail {MAIL_MODE}", "warn"),
+        ]
     if user:
         items.append(badge(f"Konto: {user['email']}", "ok"))
     else:
@@ -486,8 +502,8 @@ def badges_html(feed: Any, user: dict[str, Any] | None = None) -> str:
     return f'<div class="sn-badges">{"".join(items)}</div>'
 
 
-def header_html(feed: Any, user: dict[str, Any] | None = None) -> str:
-    return f'<div class="sn-header">{brand_html()}{badges_html(feed, user)}</div>'
+def header_html(feed: Any, user: dict[str, Any] | None = None, mode: str = "demo") -> str:
+    return f'<div class="sn-header">{brand_html(mode)}{badges_html(feed, user, mode)}</div>'
 
 
 def card_title(text: str) -> str:
@@ -592,11 +608,12 @@ def qr_box_html(payload: str) -> str:
     )
 
 
-def footer_html() -> str:
+def footer_html(source: str = "demo") -> str:
+    data = "Streamlit · SQLite · DB Timetables API" if source == "db" else "Streamlit · SQLite · GTFS"
     return (
         '<div class="sn-footer">'
-        '<span><span class="rail">════</span> MVP Züge · Sitzplatzverwaltung pro Teilstrecke</span>'
-        "<span>Streamlit · SQLite · GTFS</span>"
+        '<span><span class="rail">▚</span> MVP Züge · Sitzplatzverwaltung pro Teilstrecke</span>'
+        f"<span>{data}</span>"
         "</div>"
     )
 

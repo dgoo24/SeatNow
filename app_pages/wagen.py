@@ -9,7 +9,7 @@ import streamlit as st
 
 from seatnow import inventory, store
 from seatnow.format import fmt_clock, fmt_money, local_today, train_label
-from seatnow.loader import load_feed
+from seatnow.loader import active_feed
 from seatnow.ui import (
     WAGEN_DEADLINE_KEY,
     WAGEN_MAX_SECONDS,
@@ -24,7 +24,7 @@ from seatnow.ui import (
     trip_header_html,
 )
 
-feed = load_feed()
+feed = active_feed()
 
 trip_ids = list(feed.trips)
 if not trip_ids:

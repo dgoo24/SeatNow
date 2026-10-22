@@ -19,7 +19,7 @@ def local_now() -> datetime:
 
 
 def local_today(reference: datetime | None = None) -> datetime:
-    """Inicio del día local (Europe/Madrid) con zona horaria."""
+    """Inicio del día local (zona horaria de `config.TIMEZONE`)."""
     now = reference or local_now()
     if now.tzinfo is None:
         now = now.replace(tzinfo=_TZ)

@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     expires_at     TEXT,
     is_checked_in  INTEGER NOT NULL DEFAULT 0,
     checked_in_at  TEXT,
+    details        TEXT,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
@@ -92,6 +93,13 @@ def db_path() -> Path:
     return Path(tempfile.gettempdir()) / "seatnow.db"
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Añade columnas nuevas a bases de datos creadas con versiones anteriores."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(bookings)")}
+    if "details" not in columns:
+        conn.execute("ALTER TABLE bookings ADD COLUMN details TEXT")
+
+
 def _connection_() -> sqlite3.Connection:
     global _connection
     if _connection is None:
@@ -102,6 +110,7 @@ def _connection_() -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=15000")
         conn.executescript(SCHEMA)
+        _migrate(conn)
         _connection = conn
     return _connection
 
@@ -253,14 +262,16 @@ def create_booking(
     total_amount: float,
     expires_at: str | None = None,
     qr_payload: str | None = None,
+    details: str | None = None,
 ) -> dict[str, Any]:
     booking_id = uuid.uuid4().hex
     timestamp = now_iso()
     with transaction() as conn:
         conn.execute(
             "INSERT INTO bookings (id, user_id, trip_id, seat_id, segment_id, status, qr_payload,"
-            " total_amount, failure_reason, expires_at, is_checked_in, checked_in_at, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, NULL, ?, ?)",
+            " total_amount, failure_reason, expires_at, is_checked_in, checked_in_at, details,"
+            " created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, NULL, ?, ?, ?)",
             (
                 booking_id,
                 user_id,
@@ -271,6 +282,7 @@ def create_booking(
                 qr_payload,
                 total_amount,
                 expires_at,
+                details,
                 timestamp,
                 timestamp,
             ),

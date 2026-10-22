@@ -6,9 +6,9 @@ import random
 
 import streamlit as st
 
-from seatnow import inventory
+from seatnow import dbapi, dbfeed, inventory
 from seatnow.format import fmt_clock, fmt_duration, fmt_money, local_today
-from seatnow.loader import load_feed
+from seatnow.loader import active_feed, set_active_feed
 from seatnow.search import search_trains
 from seatnow.theme import (
     card_head,
@@ -20,13 +20,18 @@ from seatnow.theme import (
 )
 from seatnow.ui import open_trip
 
-feed = load_feed()
-
-stop_options = ["", *feed.stop_names]
+DB_MODE = dbapi.available()
+feed = active_feed()
 today = local_today().date()
 
 
 def _swap() -> None:
+    if DB_MODE:
+        st.session_state["search_origin_text"], st.session_state["search_destination_text"] = (
+            st.session_state.get("search_destination_text", ""),
+            st.session_state.get("search_origin_text", ""),
+        )
+        return
     st.session_state["search_origin"], st.session_state["search_destination"] = (
         st.session_state.get("search_destination", ""),
         st.session_state.get("search_origin", ""),
@@ -34,6 +39,14 @@ def _swap() -> None:
 
 
 def _random() -> None:
+    if DB_MODE:
+        stops = list(dbfeed.STATION_SUGGESTIONS)
+        origin = random.choice(stops)
+        destination = random.choice([s for s in stops if s != origin])
+        st.session_state["search_origin_text"] = origin
+        st.session_state["search_destination_text"] = destination
+        st.session_state["_do_search"] = True
+        return
     stops = feed.stop_names
     origin = random.choice(stops)
     st.session_state["search_origin"] = origin
@@ -45,17 +58,46 @@ def _label(option: str) -> str:
     return option or "Beliebiger Bahnhof"
 
 
+def _apply_quick_origin() -> None:
+    value = st.session_state.get("quick_origin", "–")
+    if value and value != "–":
+        st.session_state["search_origin_text"] = value
+
+
+def _apply_quick_destination() -> None:
+    value = st.session_state.get("quick_destination", "–")
+    if value and value != "–":
+        st.session_state["search_destination_text"] = value
+
+
 with st.container(border=True):
     st.html(card_head("Verbindung suchen"))
 
+    if DB_MODE:
+        st.caption("Fahrpläne und Verspätungsdaten der Deutschen Bahn (live).")
+
     cols = st.columns([3, 0.35, 3], vertical_alignment="bottom")
-    origin = cols[0].selectbox(
-        "Von", stop_options, key="search_origin", format_func=_label, placeholder="Startbahnhof"
-    )
-    cols[1].button("⇄", help="Abfahrt und Ankunft tauschen", on_click=_swap, key="swap_btn")
-    destination = cols[2].selectbox(
-        "Nach", stop_options, key="search_destination", format_func=_label, placeholder="Zielbahnhof"
-    )
+    if DB_MODE:
+        origin = cols[0].text_input(
+            "Von", key="search_origin_text", placeholder="z. B. Berlin Hbf"
+        )
+        cols[1].button(
+            "⇄", help="Abfahrt und Ankunft tauschen", on_click=_swap, key="swap_btn"
+        )
+        destination = cols[2].text_input(
+            "Nach", key="search_destination_text", placeholder="z. B. Hamburg Hbf"
+        )
+    else:
+        stop_options = ["", *feed.stop_names]
+        origin = cols[0].selectbox(
+            "Von", stop_options, key="search_origin", format_func=_label, placeholder="Startbahnhof"
+        )
+        cols[1].button(
+            "⇄", help="Abfahrt und Ankunft tauschen", on_click=_swap, key="swap_btn"
+        )
+        destination = cols[2].selectbox(
+            "Nach", stop_options, key="search_destination", format_func=_label, placeholder="Zielbahnhof"
+        )
 
     meta = st.columns([1.5, 1.7, 1, 1])
     day = meta[0].date_input("Datum", value=today, key="search_date")
@@ -73,28 +115,97 @@ with st.container(border=True):
         "Zufall", icon=":material/casino:", on_click=_random, key="random_btn", width="content"
     )
 
+    if DB_MODE:
+        with st.expander("Bekannte Bahnhöfe", icon=":material/train:"):
+            quick = st.columns(2)
+            quick[0].selectbox(
+                "Startbahnhof",
+                ["–", *dbfeed.STATION_SUGGESTIONS],
+                key="quick_origin",
+                label_visibility="collapsed",
+                on_change=_apply_quick_origin,
+            )
+            quick[1].selectbox(
+                "Zielbahnhof",
+                ["–", *dbfeed.STATION_SUGGESTIONS],
+                key="quick_destination",
+                label_visibility="collapsed",
+                on_change=_apply_quick_destination,
+            )
+            st.caption("Die Auswahl übernimmt den Bahnhof im Suchfeld.")
+
     st.html(
         hint_html(
             "Demo-Konten: <b>pasajero1–10@trenes.local</b> · Passwort <b>demo1234</b>"
         )
     )
 
-trigger = st.session_state.pop("_do_search", False)
-if clicked_search or trigger:
+
+def _run_db_search() -> list[dict]:
+    """Resuelve las estaciones y busca conexiones reales en la DB API."""
+    origin_name = (st.session_state.get("search_origin_text") or "").strip()
+    destination_name = (st.session_state.get("search_destination_text") or "").strip()
+    if not origin_name:
+        st.error("Bitte einen Startbahnhof eingeben.", icon=":material/error:")
+        return []
+
+    with st.spinner("Verbindungen werden bei der Deutschen Bahn abgerufen …"):
+        origin_station = dbfeed.resolve_station(origin_name)
+        destination_station = dbfeed.resolve_station(destination_name) if destination_name else None
+
+    if origin_station is None:
+        st.error(
+            f"Bahnhof „{origin_name}“ nicht gefunden. Versuche eine andere Schreibweise.",
+            icon=":material/search_off:",
+        )
+        return []
+    if destination_name and destination_station is None:
+        st.warning(
+            f"Bahnhof „{destination_name}“ nicht gefunden – es wird ohne Ziel gesucht.",
+            icon=":material/search_off:",
+        )
+
+    with st.spinner("Fahrplan wird ausgewertet …"):
+        db_feed, results = dbfeed.search(
+            origin_station,
+            destination_station,
+            day,
+            time_from.hour * 60 + time_from.minute if time_from else None,
+            time_to.hour * 60 + time_to.minute if time_to else None,
+            time_type="departure" if time_type == "Abfahrt ab" else "arrival",
+        )
+    set_active_feed(db_feed, "db")
     st.session_state["search_params"] = {
-        "origin": origin or None,
-        "destination": destination or None,
+        "origin": origin_station.name,
+        "destination": destination_station.name if destination_station else None,
         "day": day,
         "time_type": "departure" if time_type == "Abfahrt ab" else "arrival",
         "time_from": time_from.hour * 60 + time_from.minute if time_from else None,
         "time_to": time_to.hour * 60 + time_to.minute if time_to else None,
     }
-    st.session_state["search_results"] = search_trains(
-        feed, **st.session_state["search_params"]
-    )
+    return results
+
+
+trigger = st.session_state.pop("_do_search", False)
+if clicked_search or trigger:
+    if DB_MODE:
+        st.session_state["search_results"] = _run_db_search()
+    else:
+        st.session_state["search_params"] = {
+            "origin": origin or None,
+            "destination": destination or None,
+            "day": day,
+            "time_type": "departure" if time_type == "Abfahrt ab" else "arrival",
+            "time_from": time_from.hour * 60 + time_from.minute if time_from else None,
+            "time_to": time_to.hour * 60 + time_to.minute if time_to else None,
+        }
+        st.session_state["search_results"] = search_trains(
+            feed, **st.session_state["search_params"]
+        )
 
 results = st.session_state.get("search_results") or []
 params = st.session_state.get("search_params")
+feed = active_feed()
 
 if not results:
     st.stop()
@@ -116,7 +227,7 @@ with st.container(border=True):
     for col, label in zip(head, ["Zug", "Verbindung", "Ab / An", "Dauer", "Frei", ""], strict=False):
         col.html(f'<div class="sn-th">{label}</div>')
 
-    for result in results:
+    for index, result in enumerate(results):
         state = inventory.availability_for_segment(feed, result["segment_id"])
         free = inventory.count_available(state)
         row = st.columns([1.1, 2.3, 1.4, 0.9, 0.8, 0.9], vertical_alignment="center")
@@ -132,7 +243,7 @@ with st.container(border=True):
         row[4].html(f'<div class="sn-td">{free_html(free)}</div>')
         if row[5].button(
             "Wagen",
-            key=f"open_{result['trip_id']}_{result['segment_id']}",
+            key=f"open_{index}_{result['trip_id']}_{result['segment_id']}",
             help=f"{fmt_money(result['price'])}",
         ):
             open_trip(result["trip_id"], result["segment_id"])

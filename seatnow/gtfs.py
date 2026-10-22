@@ -9,6 +9,7 @@ import csv
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from seatnow.config import CAR_COUNT, SEATS_PER_CAR
 
@@ -60,6 +61,8 @@ class Trip:
     duration_minutes: int
     price: float
     stops: list[TripStop] = field(default_factory=list)
+    # Estado en vivo real (DB API). Si es None se simula (feed GTFS de demo).
+    live: dict[str, Any] | None = None
 
 
 @dataclass
@@ -110,8 +113,9 @@ def time_to_minutes(value: str) -> int:
 
 
 def duration_minutes(departure: str, arrival: str) -> int:
+    """Minutos entre dos horas `HH:MM:SS` (envuelve a medianoche si hace falta)."""
     diff = time_to_minutes(arrival) - time_to_minutes(departure)
-    if diff <= 0:
+    if diff < 0:
         diff += 1440
     return diff
 

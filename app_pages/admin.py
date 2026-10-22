@@ -8,11 +8,11 @@ import streamlit as st
 
 from seatnow import inventory, store
 from seatnow.format import fmt_money, seat_label, train_label
-from seatnow.loader import load_feed
+from seatnow.loader import active_feed
 from seatnow.theme import card_head
 from seatnow.ui import require_admin
 
-feed = load_feed()
+feed = active_feed()
 admin = require_admin()
 
 
@@ -115,15 +115,15 @@ with st.container(border=True):
         for booking in bookings[:200]:
             segment = feed.segments.get(booking["segment_id"])
             trip = feed.trips.get(booking["trip_id"])
+            snapshot = inventory.booking_snapshot(booking)
+            route_name = trip.route_name if trip else snapshot.get("route_name", "")
+            origin_stop = segment.origin_stop if segment else snapshot.get("origin_stop", "")
+            destination_stop = segment.destination_stop if segment else snapshot.get("destination_stop", "")
             rows.append(
                 {
                     "Buchung": booking["id"][:8].upper(),
-                    "Zug": f"{train_label(trip.route_name)} {trip.route_name}"
-                    if trip
-                    else booking["trip_id"],
-                    "Teilstrecke": f"{segment.origin_stop} → {segment.destination_stop}"
-                    if segment
-                    else "–",
+                    "Zug": f"{train_label(route_name)} {route_name}".strip() if route_name else booking["trip_id"],
+                    "Teilstrecke": f"{origin_stop} → {destination_stop}" if origin_stop else "–",
                     "Sitzplatz": seat_label(booking["seat_id"]),
                     "Status": booking["status"],
                     "Betrag": booking["total_amount"],

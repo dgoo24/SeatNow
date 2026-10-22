@@ -88,8 +88,10 @@ def require_admin() -> dict[str, Any]:
 # Barra lateral
 # --------------------------------------------------------------------------- #
 
-def render_sidebar(feed: gtfs.Feed) -> None:
-    with st.sidebar:
+def render_sidebar(feed: gtfs.Feed, source: str = "demo", container: Any = None) -> None:
+    """Barra lateral. `source` indica de dónde salen los datos ('db' o 'demo')."""
+    target = container if container is not None else st.sidebar
+    with target:
         st.markdown("### :material/train: SeatNow")
         st.caption("Sitzplatzreservierung · Teilstrecken")
 
@@ -125,6 +127,11 @@ def render_sidebar(feed: gtfs.Feed) -> None:
         seats = len(feed.trips) and CAR_COUNT * SEATS_PER_CAR
         st.caption(
             f"{len(feed.trips)} Züge · {len(feed.segments)} Teilstrecken · {seats} Sitzplätze/Zug"
+        )
+        st.caption(
+            "Datenquelle: DB-Live-Fahrplan"
+            if source == "db"
+            else "Datenquelle: GTFS-Demofeed (Spanien)"
         )
         st.caption("Zahlung: mock · E-Mail: deaktiviert")
         st.caption(f"Stand: {local_now():%d.%m.%Y %H:%M}")

@@ -8,6 +8,7 @@ backend: la unidad de recurso es el par asiento + tramo).
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -26,6 +27,33 @@ BOOKED = "BOOKED"
 
 class InventoryError(Exception):
     """Error de negocio con mensaje listo para mostrar al usuario."""
+
+
+def trip_snapshot(feed: gtfs.Feed, trip_id: str, segment_id: str) -> str:
+    """Guarda con la reserva los datos del viaje/tramo (el feed es efímero)."""
+    trip = feed.trips.get(trip_id)
+    segment = feed.segments.get(segment_id)
+    data = {
+        "route_name": trip.route_name if trip else "",
+        "origin_stop": segment.origin_stop if segment else "",
+        "destination_stop": segment.destination_stop if segment else "",
+        "departure": segment.departure if segment else "",
+        "arrival": segment.arrival if segment else "",
+        "price": segment.price if segment else 0.0,
+    }
+    return json.dumps(data, ensure_ascii=False)
+
+
+def booking_snapshot(booking: dict[str, Any]) -> dict[str, Any]:
+    """Datos del viaje guardados con la reserva (vacío si no los hay)."""
+    raw = booking.get("details")
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _now() -> datetime:
@@ -149,6 +177,7 @@ def hold_seat(
             status="PENDING_PAYMENT",
             total_amount=segment.price,
             expires_at=expires_at,
+            details=trip_snapshot(feed, trip_id, segment_id),
         )
     return booking
 

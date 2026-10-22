@@ -49,7 +49,36 @@ def _seed(trip_id: str, day: date) -> int:
     return int.from_bytes(digest[:8], "big")
 
 
+def _live_from_data(live: dict) -> LiveStatus:
+    """Estado en vivo real devuelto por la DB API (`/fchg`)."""
+    delay = int(live.get("delay_minutes") or 0)
+    cancelled = bool(live.get("cancelled"))
+    platform = str(live.get("platform") or "")
+    planned_platform = str(live.get("planned_platform") or "")
+
+    if cancelled:
+        message = "Der Zug fällt heute aus. Wir suchen automatisch eine alternative Verbindung."
+    elif delay >= 25:
+        message = "Erhebliche Verspätung am Startbahnhof. Wir informieren dich automatisch."
+    elif delay > 0:
+        message = "Leichte Verspätung im Betriebsablauf."
+    else:
+        message = "Der Zug fährt pünktlich."
+
+    return LiveStatus(
+        available=True,
+        delay_minutes=delay,
+        cancelled=cancelled,
+        platform=platform,
+        planned_platform=planned_platform,
+        message=message,
+    )
+
+
 def live_status(trip: gtfs.Trip, day: date) -> LiveStatus:
+    if trip.live:
+        return _live_from_data(trip.live)
+
     seed = _seed(trip.trip_id, day)
     delay = DELAYS[seed % len(DELAYS)]
     cancelled = (seed >> 8) % 100 < 6
@@ -77,6 +106,9 @@ def live_status(trip: gtfs.Trip, day: date) -> LiveStatus:
 
 def stop_delays(trip: gtfs.Trip, day: date, status: LiveStatus) -> list[dict[str, object]]:
     """Retraso estimado en cada parada, Growing a lo largo del trayecto."""
+    if trip.live:
+        return _stop_delays_live(trip, status)
+
     seed = _seed(trip.trip_id, day)
     rows: list[dict[str, object]] = []
     for index, stop in enumerate(trip.stops):
@@ -92,6 +124,25 @@ def stop_delays(trip: gtfs.Trip, day: date, status: LiveStatus) -> list[dict[str
                 "departure": stop.departure,
                 "delay_minutes": drift,
                 "cancelled": status.cancelled,
+            }
+        )
+    return rows
+
+
+def _stop_delays_live(trip: gtfs.Trip, status: LiveStatus) -> list[dict[str, object]]:
+    """Retrasos reales por parada (datos de la DB API)."""
+    stops_live = (trip.live or {}).get("stops") or {}
+    rows: list[dict[str, object]] = []
+    for stop in trip.stops:
+        info = stops_live.get(stop.stop_name) or {}
+        rows.append(
+            {
+                "name": stop.stop_name,
+                "arrival": stop.arrival,
+                "departure": stop.departure,
+                "delay_minutes": int(info.get("delay_minutes") or 0),
+                "cancelled": bool(info.get("cancelled") or status.cancelled),
+                "platform": info.get("platform"),
             }
         )
     return rows

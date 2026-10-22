@@ -21,7 +21,18 @@ CRITICAL_DELAY_MINUTES = 60
 PAYMENTS_MODE = "mock"
 MAIL_MODE = "disabled"
 
-TIMEZONE = os.environ.get("SEATNOW_TIMEZONE", "Europe/Madrid")
+# Horarios reales: Deutsche Bahn Timetables API (db-api-marketplace).
+# Las credenciales (DB_CLIENT_ID / DB_API_KEY) van en los secretos de
+# Streamlit Cloud o en variables de entorno.
+DB_API_BASE_URL = os.environ.get(
+    "SEATNOW_DB_API_URL", "https://apis.deutschebahn.com/db-api-marketplace/apis/timetables/v1"
+).rstrip("/")
+DB_API_TIMEOUT = float(os.environ.get("SEATNOW_DB_API_TIMEOUT", "12"))
+DB_API_MAX_TRAINS = int(os.environ.get("SEATNOW_DB_API_MAX_TRAINS", "8"))
+DB_API_MAX_STOPS = int(os.environ.get("SEATNOW_DB_API_MAX_STOPS", "10"))
+DB_API_WORKERS = int(os.environ.get("SEATNOW_DB_API_WORKERS", "6"))
+
+TIMEZONE = os.environ.get("SEATNOW_TIMEZONE", "Europe/Berlin")
 
 DEMO_PASSENGERS = 10
 DEMO_PASSWORD = "demo1234"

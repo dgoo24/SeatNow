@@ -8,12 +8,12 @@ import streamlit as st
 
 from seatnow import inventory, store
 from seatnow.format import fmt_clock, fmt_money, seat_label, train_label
-from seatnow.loader import load_feed
+from seatnow.loader import active_feed
 from seatnow.qr import qr_png
 from seatnow.theme import card_head, qr_box_html
 from seatnow.ui import require_user, status_badge
 
-feed = load_feed()
+feed = active_feed()
 user = require_user()
 
 bookings = store.list_bookings(user_id=user["id"])
@@ -50,14 +50,21 @@ st.caption(f"{len(visible)} von {len(bookings)} Reservierungen")
 for booking in visible:
     segment = feed.segments.get(booking["segment_id"])
     trip = feed.trips.get(booking["trip_id"])
-    if segment is None or trip is None:
+    snapshot = inventory.booking_snapshot(booking)
+    if segment is None and trip is None and not snapshot:
         continue
+
+    origin_stop = segment.origin_stop if segment else snapshot.get("origin_stop", "–")
+    destination_stop = segment.destination_stop if segment else snapshot.get("destination_stop", "–")
+    departure = segment.departure if segment else snapshot.get("departure", "")
+    arrival = segment.arrival if segment else snapshot.get("arrival", "")
+    route_name = trip.route_name if trip else snapshot.get("route_name", "")
 
     with st.container(border=True):
         head = st.columns([3, 2, 1.4, 1], vertical_alignment="center")
-        head[0].markdown(f"**{train_label(trip.route_name)} · {trip.route_name}**")
-        head[1].markdown(f"{segment.origin_stop} → {segment.destination_stop}")
-        head[2].markdown(f"{fmt_clock(segment.departure)} – {fmt_clock(segment.arrival)}")
+        head[0].markdown(f"**{train_label(route_name)} · {route_name}**")
+        head[1].markdown(f"{origin_stop} → {destination_stop}")
+        head[2].markdown(f"{fmt_clock(departure)} – {fmt_clock(arrival)}")
         head[3].markdown(status_badge(booking["status"]))
 
         st.html(
