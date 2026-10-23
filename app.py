@@ -103,10 +103,19 @@ def ensure_backend() -> None:
     if st.session_state.get("demo_mode") or st.session_state.get("backend_checked"):
         return
     st.session_state.backend_checked = True
+    timeout = (5, 75) if st.session_state.get("api_configured") else (3, 6)
     try:
-        fetch_health(api_origin())
-    except Exception:
+        response = requests.get(f"{api_origin()}/health", timeout=timeout)
+        response.raise_for_status()
+    except (requests.RequestException, ValueError):
         st.session_state.demo_mode = True
+
+
+def retry_backend() -> None:
+    st.session_state.demo_mode = False
+    st.session_state.backend_checked = False
+    fetch_health.clear()
+    st.rerun()
 
 
 def api(
@@ -442,8 +451,10 @@ def _secret_api_base() -> str | None:
 
 
 def init_state() -> None:
+    secret_base = _secret_api_base()
     defaults: dict[str, Any] = {
-        "api_base": _secret_api_base() or DEFAULT_API_BASE,
+        "api_base": secret_base or DEFAULT_API_BASE,
+        "api_configured": bool(secret_base or os.environ.get("API_BASE_URL")),
         "demo_mode": os.environ.get("SEATNOW_DEMO") == "1",
         "backend_checked": False,
         "page": "Suche",
@@ -1622,6 +1633,13 @@ def render_header() -> None:
                 if st.session_state.get("demo_mode"):
                     st.badge("Demo-Modus", color="orange", icon=":material/science:")
                     st.caption("Beispieldaten · läuft ohne Backend")
+                    st.button(
+                        "Backend verbinden",
+                        icon=":material/refresh:",
+                        on_click=retry_backend,
+                        width="stretch",
+                        help="Prüft die Verbindung zur konfigurierten API erneut.",
+                    )
                 else:
                     st.badge("API online", color="green", icon=":material/cloud_done:")
                     st.caption(
