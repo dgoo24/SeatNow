@@ -11,7 +11,10 @@ from zoneinfo import ZoneInfo
 import requests
 import streamlit as st
 
+import demo_backend
+
 DEFAULT_API_BASE = os.environ.get("API_BASE_URL", "http://localhost:3000").rstrip("/")
+DEMO_BASE = "demo://seatnow"
 BERLIN = ZoneInfo("Europe/Berlin")
 DIALOG_TIMEOUT = (5, 90)
 
@@ -68,8 +71,42 @@ class ApiError(Exception):
         self.code = code
 
 
-def api_base() -> str:
+def api_origin() -> str:
     return (st.session_state.get("api_base") or DEFAULT_API_BASE).rstrip("/")
+
+
+def api_base() -> str:
+    return DEMO_BASE if st.session_state.get("demo_mode") else api_origin()
+
+
+def request_json(
+    method: str,
+    path: str,
+    *,
+    base: str,
+    params: dict[str, Any] | None = None,
+    timeout: Any = DIALOG_TIMEOUT,
+) -> Any:
+    if base == DEMO_BASE:
+        try:
+            return demo_backend.handle(method, path, params=params)
+        except demo_backend.DemoError as exc:
+            raise ApiError(str(exc), exc.status, exc.code) from exc
+    response = requests.request(method, f"{base}{path}", params=params, timeout=timeout)
+    response.raise_for_status()
+    if not response.content:
+        return None
+    return response.json()
+
+
+def ensure_backend() -> None:
+    if st.session_state.get("demo_mode") or st.session_state.get("backend_checked"):
+        return
+    st.session_state.backend_checked = True
+    try:
+        fetch_health(api_origin())
+    except Exception:
+        st.session_state.demo_mode = True
 
 
 def api(
@@ -81,8 +118,20 @@ def api(
     **kwargs: Any,
 ) -> Any:
     base = (base or api_base()).rstrip("/")
+    token = st.session_state.get("token") if auth else None
+    if base == DEMO_BASE:
+        try:
+            return demo_backend.handle(
+                method,
+                path,
+                params=kwargs.get("params"),
+                json_body=kwargs.get("json"),
+                token=token,
+            )
+        except demo_backend.DemoError as exc:
+            raise ApiError(str(exc), exc.status, exc.code) from exc
+
     headers = dict(kwargs.pop("headers", {}))
-    token = st.session_state.get("token")
     if auth and token:
         headers["Authorization"] = f"Bearer {token}"
     try:
@@ -114,16 +163,12 @@ def api(
 
 @st.cache_data(ttl=20, show_spinner=False)
 def fetch_health(base: str) -> dict[str, Any]:
-    response = requests.get(f"{base}/health", timeout=6)
-    response.raise_for_status()
-    return response.json()
+    return request_json("GET", "/health", base=base, timeout=6)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_stats(base: str) -> dict[str, Any]:
-    response = requests.get(f"{base}/api/trains/stats", timeout=20)
-    response.raise_for_status()
-    return response.json()
+    return request_json("GET", "/api/trains/stats", base=base, timeout=20)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -131,59 +176,52 @@ def stop_suggestions(base: str, query: str) -> list[str]:
     if len(query.strip()) < 2:
         return []
     try:
-        response = requests.get(
-            f"{base}/api/trains/stops",
+        payload = request_json(
+            "GET",
+            "/api/trains/stops",
+            base=base,
             params={"q": query.strip(), "limit": 8},
             timeout=15,
         )
-        response.raise_for_status()
-        return [item["stopName"] for item in response.json() if item.get("stopName")]
-    except (requests.RequestException, ValueError, KeyError):
+        return [item["stopName"] for item in payload if item.get("stopName")]
+    except (requests.RequestException, ApiError, ValueError, KeyError, TypeError):
         return []
 
 
 @st.cache_data(ttl=120, show_spinner=False)
 def fetch_search(base: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-    response = requests.get(f"{base}/api/trains/search", params=params, timeout=DIALOG_TIMEOUT)
-    response.raise_for_status()
-    payload = response.json()
+    payload = request_json("GET", "/api/trains/search", base=base, params=params)
     return payload if isinstance(payload, list) else []
 
 
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_trip(base: str, trip_id: str, date_value: str | None = None) -> dict[str, Any]:
     params = {"date": date_value} if date_value else None
-    response = requests.get(
-        f"{base}/api/trains/{trip_id}",
-        params=params,
-        timeout=DIALOG_TIMEOUT,
-    )
-    response.raise_for_status()
-    return response.json()
+    return request_json("GET", f"/api/trains/{trip_id}", base=base, params=params)
 
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_availability(base: str, trip_id: str, segment_id: str) -> list[dict[str, Any]]:
-    response = requests.get(
-        f"{base}/api/trains/{trip_id}/segments/{segment_id}/availability",
+    payload = request_json(
+        "GET",
+        f"/api/trains/{trip_id}/segments/{segment_id}/availability",
+        base=base,
         timeout=(5, 20),
     )
-    response.raise_for_status()
-    payload = response.json()
     return payload if isinstance(payload, list) else []
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_nearby(base: str, lat: float, lon: float) -> dict[str, Any] | None:
     try:
-        response = requests.get(
-            f"{base}/api/trains/stops/nearby",
+        return request_json(
+            "GET",
+            "/api/trains/stops/nearby",
+            base=base,
             params={"lat": lat, "lon": lon},
             timeout=(5, 15),
         )
-        response.raise_for_status()
-        return response.json()
-    except (requests.RequestException, ValueError):
+    except (requests.RequestException, ApiError, ValueError):
         return None
 
 
@@ -395,9 +433,19 @@ def seconds_left(value: Any) -> int:
     return max(0, int((parsed - dt.datetime.now(dt.timezone.utc)).total_seconds()))
 
 
+def _secret_api_base() -> str | None:
+    try:
+        value = st.secrets.get("API_BASE_URL")
+    except Exception:
+        return None
+    return str(value).rstrip("/") if value else None
+
+
 def init_state() -> None:
     defaults: dict[str, Any] = {
-        "api_base": DEFAULT_API_BASE,
+        "api_base": _secret_api_base() or DEFAULT_API_BASE,
+        "demo_mode": os.environ.get("SEATNOW_DEMO") == "1",
+        "backend_checked": False,
         "page": "Suche",
         "results": [],
         "search_params": None,
@@ -565,7 +613,7 @@ def refresh_search() -> None:
     try:
         fetch_search.clear()
         rows = fetch_search(api_base(), params)
-    except requests.RequestException as exc:
+    except (requests.RequestException, ApiError) as exc:
         flash("err", f"Backend nicht erreichbar ({api_base()}): {exc}")
         return
     st.session_state.results = rows
@@ -604,7 +652,7 @@ def do_search(
     with st.spinner("Suche läuft …"):
         try:
             rows = fetch_search(api_base(), params)
-        except requests.RequestException as exc:
+        except (requests.RequestException, ApiError) as exc:
             report_error(ApiError(f"Backend nicht erreichbar ({api_base()}): {exc}"))
             return
     st.session_state.results = rows
@@ -724,6 +772,7 @@ def checkout_hold(hold: dict[str, Any]) -> None:
         return
     st.session_state.hold = None
     st.session_state.ticket = result
+    fetch_availability.clear()
     flash("ok", "Zahlung erfolgreich. Sitzplatz bestätigt.")
     st.rerun()
 
@@ -736,6 +785,7 @@ def cancel_booking(booking_id: str, *, from_hold: bool = False) -> None:
         return
     if from_hold:
         st.session_state.hold = None
+    fetch_availability.clear()
     flash("ok", "Buchung storniert, Sitzplatz freigegeben.")
     st.rerun()
 
@@ -894,7 +944,7 @@ def availability_panel(
 
     try:
         availability = fetch_availability(api_base(), trip_id, segment_id)
-    except requests.RequestException as exc:
+    except (requests.RequestException, ApiError) as exc:
         st.error(f"Backend nicht erreichbar ({api_base()}): {exc}")
         return
 
@@ -1304,7 +1354,7 @@ def view_trip() -> None:
 
     try:
         details = fetch_trip(api_base(), ctx["id"], ctx.get("date"))
-    except requests.RequestException as exc:
+    except (requests.RequestException, ApiError) as exc:
         report_error(ApiError(f"Backend nicht erreichbar ({api_base()}): {exc}"))
         return
 
@@ -1362,6 +1412,7 @@ def view_trip() -> None:
                 except ApiError as exc:
                     st.error(str(exc))
                 else:
+                    fetch_availability.clear()
                     flash(
                         "ok",
                         f"{result.get('passengerEmail')} hat Wagen {result.get('carNumber')} · "
@@ -1568,11 +1619,15 @@ def render_header() -> None:
             st.caption("Deine Reise durch Deutschland · Sitzplätze pro Teilstrecke")
         with status:
             if health:
-                st.badge("API online", color="green", icon=":material/cloud_done:")
-                st.caption(
-                    f"Zahlungen: {health.get('payments', '–')} · "
-                    f"E-Mail: {health.get('mail', '–')}"
-                )
+                if st.session_state.get("demo_mode"):
+                    st.badge("Demo-Modus", color="orange", icon=":material/science:")
+                    st.caption("Beispieldaten · läuft ohne Backend")
+                else:
+                    st.badge("API online", color="green", icon=":material/cloud_done:")
+                    st.caption(
+                        f"Zahlungen: {health.get('payments', '–')} · "
+                        f"E-Mail: {health.get('mail', '–')}"
+                    )
             else:
                 st.badge("API offline", color="red", icon=":material/cloud_off:")
                 st.caption("Backend unter `backend/` starten (Port 3000).")
@@ -1617,6 +1672,7 @@ st.set_page_config(
 )
 
 init_state()
+ensure_backend()
 validate_session()
 render_flash()
 render_header()
