@@ -211,10 +211,10 @@ def _train_label(trip: dict[str, Any]) -> str:
 
 
 def _route_metrics(origin: str, destination: str) -> tuple[int, int, int]:
-    km = int(round(_haversine(STATIONS[origin], STATIONS[destination]) * 1.12))
+    km = round(_haversine(STATIONS[origin], STATIONS[destination]) * 1.12)
     km = max(25, km)
-    minutes = max(35, int(round(km / 115 * 60)) + 12)
-    price = max(490, int(round((490 + km * 8.5) / 10.0)) * 10)
+    minutes = max(35, round(km / 115 * 60) + 12)
+    price = max(490, round((490 + km * 8.5) / 10.0) * 10)
     return km, minutes, price
 
 
