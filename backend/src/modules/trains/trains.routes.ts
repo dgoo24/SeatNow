@@ -38,8 +38,8 @@ export async function trainsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/trains/stops', async (request) => {
-    const q = (request.query as { q?: string }).q ?? '';
-    return listStops(q);
+    const { q, limit } = request.query as { q?: string; limit?: string };
+    return listStops(q ?? '', Number.parseInt(limit ?? '', 10) || 20);
   });
 
   /** Estación más cercana a una coordenada (origen por GPS). */

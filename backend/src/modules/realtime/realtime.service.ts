@@ -2,9 +2,11 @@
 import { prisma } from '../../shared/database/prisma';
 import { redis } from '../../shared/redis/redis';
 import { sseBroker } from '../../shared/sse/sse-broker';
+import { addDaysIso, epochOfBerlinLocal } from '../../shared/time/berlin';
 import { handleTripDisruption, shouldHandleRealtime } from '../bookings/disruption.service';
 import { BahnWebProvider } from './bahn-web.provider';
 import { DbRestProvider, type DbRestDeparture, type RealtimeProvider } from './db-rest.provider';
+import { isGenericStationName, resolveStationEva } from './station-resolver';
 
 export interface LiveNextStop {
   name: string | null;
@@ -18,7 +20,14 @@ export interface LiveNextStop {
 export interface LiveRealtimeDto {
   available: boolean;
   provider: string;
-  reason?: 'disabled' | 'not-running-today' | 'no-match' | 'upstream';
+  reason?:
+    | 'disabled'
+    | 'not-running-today'
+    | 'not-today'
+    | 'finished'
+    | 'no-match'
+    | 'no-station'
+    | 'upstream';
   message?: string;
   fetchedAt?: string;
   train?: {
@@ -87,13 +96,6 @@ function realtimeProviders(): RealtimeProvider[] {
   }
   return providers;
 }
-
-const localDateStr = (d: Date): string => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
-};
 
 function dayRange(date: Date): { start: Date; end: Date } {
   // El filtro de serviceDate debe apuntar a un UNICO dia calendario: los limites
@@ -228,6 +230,7 @@ function toDto(
   plannedDeparture: string,
   eva: string,
   dep: DbRestDeparture,
+  stationName: string,
 ): LiveRealtimeDto {
   const stop = dep.stop;
   const actualDeparture = dep.when ?? dep.stop?.departure ?? null;
@@ -251,7 +254,7 @@ function toDto(
     },
     live: {
       eva,
-      station: stop?.station?.name || 'Fulda',
+      station: stop?.station?.name || stationName,
       line: dep.line?.name ?? trip.routeName,
       number: numberFrom(dep.line?.name),
       direction: dep.direction ?? trip.destinationStop,
@@ -265,11 +268,12 @@ function toDto(
       position: latLngOf(dep.currentTripPosition as object | null | undefined),
       nextStops: (dep.nextStopovers ?? []).slice(0, 5).map((s) => {
         const row = s.stop ?? {};
+        const arrivalDelay = row.arrivalDelay;
         return {
           name: row.station?.name ?? null,
           planned: row.plannedArrival ?? null,
           actual: row.arrival ?? null,
-          delayMinutes: row.arrivalDelay ?? null,
+          delayMinutes: arrivalDelay != null ? Math.round(arrivalDelay / 60) : null,
           cancelled: !!row.cancelled,
           platform: row.arrivalPlatform ?? null,
         };
@@ -278,8 +282,42 @@ function toDto(
   };
 }
 
+interface PlannedStop {
+  stopName: string;
+  time: string;
+  plannedIso: string;
+  plannedEpoch: number;
+}
+
+/** Hora de paso en una parada, ya normalizada (soporta GTFS >= 24:00). */
+function plannedAt(
+  stop: { departureTime: string | null; arrivalTime: string | null },
+  date: string,
+): Omit<PlannedStop, 'stopName'> | null {
+  const time = stop.departureTime ?? stop.arrivalTime;
+  if (!time) return null;
+  const [hStr, mStr] = String(time).split(':');
+  const hRaw = Number.parseInt(hStr, 10);
+  if (Number.isNaN(hRaw)) return null;
+  const extraDays = Math.floor(hRaw / 24);
+  const hh = String(((hRaw % 24) + 24) % 24).padStart(2, '0');
+  const mm = String(mStr ?? '00').padStart(2, '0');
+  const boardDate = addDaysIso(date, extraDays);
+  return {
+    time: `${hh}:${mm}`,
+    plannedIso: `${boardDate}T${hh}:${mm}:00`,
+    plannedEpoch: epochOfBerlinLocal(date, time),
+  };
+}
+
 /**
- * Estado en tiempo real de un viaje en la parada de referencia (Fulda).
+ * Estado en tiempo real de un viaje.
+ *
+ * - Si el viaje pasa por Fulda se usa su tablero (comportamiento histórico).
+ * - Si no, se resuelve la estación de referencia (la próxima parada del día) a
+ *   un ID EVA y se consulta el tablero de esa estación: así funciona en toda
+ *   Alemania, no solo en el corredor de Fulda.
+ *
  * Devuelve siempre un DTO serializable (nunca lanza) para que la web no se rompa
  * si el tablero en vivo no esta disponible (servicio caido / sin datos de hoy).
  */
@@ -297,16 +335,21 @@ export async function getLiveForTrip(
   });
   if (!trip) return { available: false, provider: realtimeStatus.provider, message: 'Fahrt nicht gefunden.' };
 
-  const fulda = trip.stops.find((s) => s.stopName.toLowerCase().includes('fulda'));
-  if (!fulda) return { available: false, provider: realtimeStatus.provider, message: 'Die Fahrt hält nicht in Fulda.' };
-
-  const d = date ?? localDateStr(new Date());
-  const day = new Date(d);
-  if (Number.isNaN(day.getTime())) {
+  const today = berlinParts().date;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return { available: false, provider: realtimeStatus.provider, message: 'Ungültiges Datum.' };
   }
+  const d = date ?? today;
+  if (d !== today) {
+    return {
+      available: false,
+      provider: realtimeStatus.provider,
+      reason: 'not-today',
+      message: 'Echtzeit ist nur am Reisetag verfügbar.',
+    };
+  }
 
-  const { start, end } = dayRange(day);
+  const { start, end } = dayRange(new Date(d));
   const activeDates = await prisma.tripServiceDate.count({
     where: { tripId, serviceDate: { gte: start, lte: end } },
   });
@@ -314,27 +357,77 @@ export async function getLiveForTrip(
     return { available: false, provider: realtimeStatus.provider, reason: 'not-running-today', message: 'Dieser Zug verkehrt heute nicht.' };
   }
 
-  const time = fulda.departureTime ?? fulda.arrivalTime ?? '00:00';
-  const [th, tm] = time.split(':').map((v) => v.padStart(2, '0'));
-  const parts = berlinParts();
-  const plannedIso = `${d}T${th}:${tm}:00${parts.offset}`;
-  const plannedEpoch = Date.parse(plannedIso);
-  const plannedDeparture = `${d}T${th}:${tm}:00`;
+  const plannedStops: PlannedStop[] = [];
+  for (const stop of trip.stops) {
+    const planned = plannedAt(stop, d);
+    if (planned && !Number.isNaN(planned.plannedEpoch)) {
+      plannedStops.push({ ...planned, stopName: stop.stopName });
+    }
+  }
+  if (plannedStops.length === 0) {
+    return { available: false, provider: realtimeStatus.provider, message: 'Für diese Fahrt fehlen planmäßige Zeiten.' };
+  }
+
+  const now = Date.now();
+  // Fahrt beendet: das letzte Fahrplan-Ereignis liegt > 45 Min zurueck. Ohne
+  // diese Pruefung wuerde ein alter Abfahrts-Zettel als "live" verkauft.
+  const lastEpoch = plannedStops[plannedStops.length - 1].plannedEpoch;
+  if (lastEpoch < now - 45 * 60_000) {
+    return {
+      available: false,
+      provider: realtimeStatus.provider,
+      reason: 'finished',
+      message: 'Diese Fahrt ist bereits beendet.',
+    };
+  }
+
+  // La Anzeigetafel liefert ABFAHRTEN: der Endbahnhof taugt nicht als Referenz
+  // (dort kaeme ein anderer Zug derselben Linie in Gegenrichtung in Frage).
+  const boardStops = plannedStops.length > 1 ? plannedStops.slice(0, -1) : plannedStops;
+  // "Hauptbahnhof" sin ciudad (p. ej. Erfurt im DELFI-Feed) no sirve como
+  // referencia: se salta para no consultar el tablero de otra ciudad.
+  const usable = boardStops.filter((s) => !isGenericStationName(s.stopName));
+  const pool = usable.length > 0 ? usable : boardStops;
+  const upcoming = pool.find((s) => s.plannedEpoch >= now - 45 * 60_000);
+  const reference = upcoming ?? pool[pool.length - 1];
+  const fulda = pool.find((s) => s.stopName.toLowerCase().includes('fulda'));
+
+  let eva: string;
+  let stationName: string;
+  if (fulda) {
+    eva = env.REALTIME_FULDA_EVA;
+    stationName = fulda.stopName;
+  } else {
+    const station = await resolveStationEva(reference.stopName);
+    if (!station) {
+      return {
+        available: false,
+        provider: realtimeStatus.provider,
+        reason: 'no-station',
+        message: `Keine Live-Anzeigetafel für ${reference.stopName} verfügbar.`,
+      };
+    }
+    eva = station.id;
+    stationName = station.name || reference.stopName;
+  }
+
+  const planned = fulda ?? reference;
+  const plannedDeparture = `${d}T${planned.time}:00`;
 
   try {
-    const downKey = `rt:down:${env.REALTIME_FULDA_EVA}`;
+    const downKey = `rt:down:${eva}`;
     const down = await redis.get(downKey).catch(() => null);
     if (down) {
       return { available: false, provider: realtimeStatus.provider, reason: 'upstream', message: down };
     }
 
-    const board = await getBoard(env.REALTIME_FULDA_EVA, `${d}T${th}:${tm}:00`);
+    const board = await getBoard(eva, planned.plannedIso);
     realtimeStatus.lastFetchedAt = new Date().toISOString();
 
     const ranked = board
       .map((dep) => ({
         dep,
-        score: scoreCandidate(dep, trip.routeName, trip.destinationStop, trip.originStop, plannedEpoch),
+        score: scoreCandidate(dep, trip.routeName, trip.destinationStop, trip.originStop, planned.plannedEpoch),
       }))
       .sort((a, b) => b.score - a.score);
 
@@ -345,11 +438,11 @@ export async function getLiveForTrip(
         available: false,
         provider: realtimeStatus.provider,
         reason: 'no-match',
-        message: 'Der Zug erscheint derzeit nicht auf der Live-Anzeigetafel der DB in Fulda.',
+        message: `Der Zug erscheint derzeit nicht auf der Live-Anzeigetafel in ${stationName}.`,
       };
     }
 
-    const dto = toDto(trip, d, plannedDeparture, env.REALTIME_FULDA_EVA, best.dep);
+    const dto = toDto(trip, d, plannedDeparture, eva, best.dep, stationName);
     sseBroker.broadcastToTrip(tripId, 'realtime', dto);
 
     // Disrupciones proactivas: cancelacion o retraso critico detectados en vivo.
@@ -372,7 +465,7 @@ export async function getLiveForTrip(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upstream-Fehler';
     realtimeStatus.lastError = message;
-    await redis.set(`rt:down:${env.REALTIME_FULDA_EVA}`, message, 'EX', 30).catch(() => {});
+    await redis.set(`rt:down:${eva}`, message, 'EX', 30).catch(() => {});
     return {
       available: false,
       provider: realtimeStatus.provider,

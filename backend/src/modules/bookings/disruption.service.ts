@@ -33,7 +33,7 @@ import {
   sendMail,
 } from '../../shared/email/mailer';
 import { inventoryProvider } from '../inventory';
-import { berlinDateStr, berlinDayUtcRange, berlinNowMinutes } from '../../shared/time/berlin';
+import { berlinDateStr, berlinDayUtcRange, berlinNowMinutes, formatClockTime } from '../../shared/time/berlin';
 
 type BookingFull = Booking & { seat: Seat; segment: Segment; trip: Trip; user: User };
 
@@ -136,11 +136,11 @@ async function notifyEmail(
       fullName: booking.user.fullName,
       origin: booking.segment.originStopName,
       destination: booking.segment.destinationStopName,
-      departureTime: booking.segment.departureTime,
+      departureTime: formatClockTime(booking.segment.departureTime),
       seatNumber: booking.seat.seatNumber,
       carNumber: booking.seat.carNumber,
       qrPayload: booking.qrPayload,
-      oldDepartureTime: booking.segment.departureTime,
+      oldDepartureTime: formatClockTime(booking.segment.departureTime),
       bookingId: booking.id,
     }),
   });
@@ -184,7 +184,7 @@ async function reassignBooking(booking: BookingFull): Promise<'reassigned' | 'pe
       where: { id: booking.id },
       data: {
         status: 'CANCELLED',
-        failureReason: `Zugausfall – automatisch umgebucht auf ${replacement.trip.routeName} ${replacement.segment.departureTime} (${replacement.segment.originStopName} -> ${replacement.segment.destinationStopName})`,
+        failureReason: `Zugausfall – automatisch umgebucht auf ${replacement.trip.routeName} ${formatClockTime(replacement.segment.departureTime)} (${replacement.segment.originStopName} -> ${replacement.segment.destinationStopName})`,
         expiresAt: null,
       },
     });
@@ -203,12 +203,12 @@ async function reassignBooking(booking: BookingFull): Promise<'reassigned' | 'pe
       newBookingId: created.id,
       status: 'REASSIGNED',
       newTripId: created.tripId,
-      newDepartureTime: created.segment.departureTime,
+          newDepartureTime: formatClockTime(created.segment.departureTime),
       newOrigin: created.segment.originStopName,
       newDestination: created.segment.destinationStopName,
       newSeatNumber: created.seat.seatNumber,
       newCarNumber: created.seat.carNumber,
-      message: `Dein Zug ist ausgefallen. Neue Verbindung: ${created.segment.originStopName} -> ${created.segment.destinationStopName}, Abfahrt ${created.segment.departureTime}, Platz ${created.seat.seatNumber}.`,
+      message: `Dein Zug ist ausgefallen. Neue Verbindung: ${created.segment.originStopName} -> ${created.segment.destinationStopName}, Abfahrt ${formatClockTime(created.segment.departureTime)}, Platz ${created.seat.seatNumber}.`,
     };
     sseBroker.sendToUser(booking.tripId, booking.userId, 'booking:update', reassignedMsg);
     sseBroker.sendToUser(created.tripId, booking.userId, 'booking:update', reassignedMsg);
@@ -218,7 +218,7 @@ async function reassignBooking(booking: BookingFull): Promise<'reassigned' | 'pe
       (d) =>
         bookingReassignedHtml({
           ...d,
-          newDepartureTime: created.segment.departureTime,
+      newDepartureTime: formatClockTime(created.segment.departureTime),
           newOrigin: created.segment.originStopName,
           newDestination: created.segment.destinationStopName,
           newSeatNumber: created.seat.seatNumber,

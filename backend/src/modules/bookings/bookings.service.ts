@@ -4,6 +4,7 @@ import { ConflictError, NotFoundError } from '../../shared/errors';
 import { sseBroker } from '../../shared/sse/sse-broker';
 import { generateBoardingPassPdf } from '../../shared/pdf/ticket';
 import { bookingConfirmedHtml, sendMail } from '../../shared/email/mailer';
+import { formatClockTime } from '../../shared/time/berlin';
 import { captureIntent, createManualCaptureIntent, paymentsMode } from '../payments/payments.service';
 import { inventoryProvider } from '../inventory';
 
@@ -148,8 +149,8 @@ export async function checkout(userId: string, bookingId: string, paymentMethodI
     fullName: user?.fullName ?? 'Fahrgast',
     origin: booking.segment.originStopName,
     destination: booking.segment.destinationStopName,
-    departureTime: booking.segment.departureTime,
-    arrivalTime: booking.segment.arrivalTime,
+    departureTime: formatClockTime(booking.segment.departureTime),
+    arrivalTime: formatClockTime(booking.segment.arrivalTime),
     seatNumber: booking.seat.seatNumber,
     carNumber: booking.seat.carNumber,
     qrPayload,
@@ -162,7 +163,7 @@ export async function checkout(userId: string, bookingId: string, paymentMethodI
       fullName: user?.fullName ?? 'Fahrgast',
       origin: booking.segment.originStopName,
       destination: booking.segment.destinationStopName,
-      departureTime: booking.segment.departureTime,
+      departureTime: formatClockTime(booking.segment.departureTime),
       seatNumber: booking.seat.seatNumber,
       carNumber: booking.seat.carNumber,
       qrPayload,

@@ -8,6 +8,7 @@
  */
 
 import { env } from '../../config/env';
+import { berlinOffsetFor } from '../../shared/time/berlin';
 
 export interface RealtimeProviderError extends Error {
   upstream: boolean;
@@ -76,7 +77,7 @@ export class DbRestProvider implements RealtimeProvider {
       : ['https://v6.db.transport.rest', 'https://v5.db.transport.rest'];
   }
 
-  async departures(eva: string, _when?: string): Promise<DbRestDeparture[]> {
+  async departures(eva: string, when?: string): Promise<DbRestDeparture[]> {
     const params = new URLSearchParams({
       duration: '420',
       nationalExpress: 'true',
@@ -88,6 +89,14 @@ export class DbRestProvider implements RealtimeProvider {
       tram: 'false',
       taxi: 'false',
     });
+
+    // `when` llega como hora local Berlin sin desfase ("YYYY-MM-DDTHH:mm:ss").
+    // v6 espera ISO con zona: se calcula el desfase CET/CEST de esa fecha.
+    if (when) {
+      const date = when.slice(0, 10);
+      const time = when.slice(11, 16);
+      params.set('when', `${when}${berlinOffsetFor(date, time || '12:00')}`);
+    }
 
     let lastErr: RealtimeProviderError | null = null;
     for (const host of this.hosts) {

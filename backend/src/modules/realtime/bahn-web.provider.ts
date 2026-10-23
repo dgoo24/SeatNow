@@ -8,8 +8,9 @@
  * DbRestDeparture para que el resto del modulo sea agnóstico del proveedor.
  */
 
-import { execFile } from 'node:child_process';
 import type { DbRestDeparture, RealtimeProvider } from './db-rest.provider';
+import { bahnGetJson } from './bahn-web-http';
+import { berlinOffsetFor } from '../../shared/time/berlin';
 
 interface BahnWebEntry {
   bahnhofsId?: string;
@@ -30,75 +31,8 @@ interface BahnWebEntry {
 }
 
 const BASE = 'https://www.bahn.de/web/api/reiseloesung/abfahrten';
-const LONG_DISTANCE = new Set(['ICE', 'IC', 'EC', 'TGV', 'NJ', 'RJ']);
+const LONG_DISTANCE = new Set(['ICE', 'IC', 'EC', 'ECE', 'TGV', 'NJ', 'RJ', 'RJX', 'EN']);
 
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
-
-/**
- * bahn.de protege el endpoint con un anti-bot OPS que bloquea la pila TLS de
- * Node (OpenSSL), pero admite Schannel (.NET/PowerShell). En Windows este puente
- * ejecuta powershell.exe + Invoke-RestMethod y parsea su JSON; fuera de Windows
- * se intenta fetch simple por si en ese entorno no hay bloqueo.
- */
-function psInvokeRestMethod(url: string): Promise<string> {
-  const script =
-    "$ErrorActionPreference='Stop';" +
-    '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;' +
-    `(Invoke-RestMethod -Uri '${url}' -Method Get -TimeoutSec 15 ` +
-    `-Headers @{Accept='application/json';'User-Agent'='${USER_AGENT}';Referer='https://www.bahn.de/'}) ` +
-    '| ConvertTo-Json -Depth 12 -Compress';
-  return new Promise((resolve, reject) => {
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { timeout: 25_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, encoding: 'utf8' },
-      (err, stdout) => {
-        if (err) return reject(err);
-        if (!stdout.trim()) return reject(new Error('Leere Antwort von PowerShell'));
-        resolve(stdout);
-      },
-    );
-  });
-}
-
-async function plainFetch(url: string): Promise<unknown> {
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': USER_AGENT,
-      Referer: 'https://www.bahn.de/',
-    },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`Anzeigetafel nicht verfügbar (HTTP ${res.status})`);
-  return res.json();
-}
-
-/** Desfase UTC de Europe/Berlin para un instante dado, en "+HH:MM". */
-function berlinOffsetFor(isoLocal: string): string {
-  const date = new Date(isoLocal);
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Berlin',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-  const p = Object.fromEntries(fmt.formatToParts(now).map((x) => [x.type, x.value]));
-  const hh = p.hour === '24' ? '00' : p.hour;
-  const wallEpoch = Date.UTC(+p.year, +p.month - 1, +p.day, +hh, +p.minute, +p.second);
-  const offsetMs = wallEpoch - now.getTime();
-  const sign = offsetMs < 0 ? '-' : '+';
-  const abs = Math.abs(offsetMs);
-  return `${sign}${String(Math.floor(abs / 3_600_000)).padStart(2, '0')}:${String(
-    Math.floor((abs % 3_600_000) / 60_000),
-  ).padStart(2, '0')}`;
-}
 
 const toIso = (s: string | null | undefined, offset: string): string | undefined =>
   s ? `${s}${offset}` : undefined;
@@ -141,18 +75,12 @@ export class BahnWebProvider implements RealtimeProvider {
     for (const host of this.hosts) {
       try {
         const url = `${host}?${params.toString()}`;
-        const raw =
-          process.platform === 'win32'
-            ? await psInvokeRestMethod(url).catch(() => plainFetch(url))
-            : await plainFetch(url);
-        const body = (raw && typeof raw === 'string' ? JSON.parse(raw) : raw) as {
-          entries?: BahnWebEntry[];
-        };
+        const body = await bahnGetJson<{ entries?: BahnWebEntry[] }>(url);
         if (!body || !Array.isArray(body.entries)) {
           throw new Error('Unerwartete Antwort der HAFAS-Anzeigetafel');
         }
 
-        const offset = berlinOffsetFor(`${date}T00:00:00`);
+        const offset = berlinOffsetFor(date, time);
         const out: DbRestDeparture[] = [];
         for (const e of body.entries) {
           const kurzText = e.verkehrmittel?.kurzText ?? '';

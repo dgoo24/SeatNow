@@ -564,6 +564,7 @@
       results: [],
       segments: [],
       tripId: null,
+      tripDate: null,
       currentSegmentId: null,
       seatEls: new Map(),
       es: null,
@@ -586,6 +587,14 @@
       const text = await res.text();
       let data = null;
       try { data = text ? JSON.parse(text) : null; } catch (e) { data = { message: text }; }
+      const isAuthAttempt = path === '/api/auth/login' || path === '/api/auth/register';
+      if (res.status === 401 && state.token && !isAuthAttempt) {
+        // Token abgelaufen oder aus einer alten Sitzung: verwerfen und neu anmelden.
+        logout();
+        const err = new Error('Sitzung abgelaufen. Bitte erneut anmelden.');
+        err.code = 'UNAUTHORIZED';
+        throw err;
+      }
       if (!res.ok) throw new Error((data && (data.message || data.error)) || ('HTTP ' + res.status));
       return data;
     }
@@ -689,6 +698,18 @@
       }, 4000);
     }
 
+    // GTFS erlaubt Zeiten ab 24:00 für Fahrten über Mitternacht ("25:24" = 01:24
+    // am Folgetag). Intern bleiben die Rohwerte (Sortierung/Dauer); hier nur Anzeige.
+    function hhmm(t, markNextDay) {
+      if (!t) return '--:--';
+      const p = String(t).split(':');
+      const hRaw = parseInt(p[0], 10);
+      if (isNaN(hRaw)) return String(t);
+      const h = ((hRaw % 24) + 24) % 24;
+      const out = String(h).padStart(2, '0') + ':' + String(p[1] || '00').padStart(2, '0');
+      return markNextDay && hRaw >= 24 ? out + ' +1' : out;
+    }
+
     function fmtDuration(min) {
       if (min == null) return '–';
       return Math.floor(min / 60) + ':' + String(min % 60).padStart(2, '0') + ' h';
@@ -708,7 +729,7 @@
         return '<tr>' +
           '<td><div class="train-cell"><span class="train-kind' + kindCls + '">' + esc(label) + '</span></div></td>' +
           '<td class="route-cell"><b>' + esc(t.originStop) + '</b><span class="arrow">➔</span><b>' + esc(t.destinationStop) + '</b></td>' +
-          '<td><b>' + esc(t.departureTime || '--:--') + '</b> <span class="muted">→</span> <b>' + esc(t.arrivalTime || '--:--') + '</b></td>' +
+          '<td><b>' + esc(hhmm(t.departureTime)) + '</b> <span class="muted">→</span> <b>' + esc(hhmm(t.arrivalTime, true)) + '</b></td>' +
           '<td>' + fmtDuration(t.durationMinutes) + '</td>' +
           '<td>' + free + '</td>' +
           '<td style="text-align:right"><button class="open-btn" data-trip="' + t.id + '">Wagen</button></td>' +
@@ -794,6 +815,7 @@
       $('wagons').innerHTML = '<span class="muted">Wagen wird geladen...</span>';
       try {
         const date = $('date').value || null;
+        state.tripDate = date;
         const params = new URLSearchParams();
         if (date) params.set('date', date);
         if ($('origin').value.trim()) params.set('origin', $('origin').value.trim());
@@ -810,17 +832,17 @@
               .catch(() => {});
           }, 5000);
         }
-        $('tripMeta').textContent = 'Abfahrt ' + t.departureTime + ' · Ankunft ' + t.arrivalTime + ' · ' + t.stops.length + ' Halte';
+        $('tripMeta').textContent = 'Abfahrt ' + hhmm(t.departureTime) + ' · Ankunft ' + hhmm(t.arrivalTime, true) + ' · ' + t.stops.length + ' Halte';
         $('stops').innerHTML = t.stops.map((s, i) =>
-          '<span class="chip' + (s.stopName === t.originStop || s.stopName === t.destinationStop ? ' focus' : '') + '">' + esc(s.stopName) + ' ' + (s.departureTime || s.arrivalTime || '') + '</span>').join('');
+          '<span class="chip' + (s.stopName === t.originStop || s.stopName === t.destinationStop ? ' focus' : '') + '">' + esc(s.stopName) + ' ' + hhmm(s.departureTime || s.arrivalTime, true) + '</span>').join('');
         const sel = $('segment');
         sel.innerHTML = t.segments.map(s =>
-          '<option value="' + s.id + '">' + esc(s.from) + ' → ' + esc(s.to) + ' · ' + esc(s.departureTime) + '-' + esc(s.arrivalTime) + ' · ' + fmtMoney(s.price) + ' (' + s.durationMinutes + ' Min.)</option>').join('');
+          '<option value="' + s.id + '">' + esc(s.from) + ' → ' + esc(s.to) + ' · ' + esc(hhmm(s.departureTime)) + '-' + esc(hhmm(s.arrivalTime, true)) + ' · ' + fmtMoney(s.price) + ' (' + s.durationMinutes + ' Min.)</option>').join('');
         state.segments = t.segments;
         sel.value = preselectSegmentId || t.segments[0].id;
         sel.onchange = () => loadSegment(sel.value);
         openSse(tripId);
-        startLive(tripId);
+        startLive(tripId, date);
         loadSegment(sel.value);
       } catch (err) { showError('Fehler beim Laden der Fahrt: ' + err.message); }
     }
@@ -894,12 +916,16 @@
         ? '<div class="kv"><b>Tatsächl. Abfahrt</b><span>' + esc(l.actualDeparture) + '</span></div>' : '';
       const llegada = l.actualArrival && l.actualArrival !== l.plannedArrival
         ? '<div class="kv"><b>Tatsächl. Ankunft</b><span>' + esc(l.actualArrival) + '</span></div>' : '';
-      const next = (l.nextStops || []).map(n =>
-        '<span class="' + (n.delayMinutes ? 'delayed' : '') + '">' + esc(n.name) + ' ' + esc(n.time || '') +
-        (n.delayMinutes ? ' (+' + n.delayMinutes + ')' : '') + '</span>').join('');
+      const next = (l.nextStops || []).map(n => {
+        const when = fmtClock(n.actual || n.planned);
+        return '<span class="' + (n.delayMinutes ? 'delayed' : '') + '">' + esc(n.name) + ' ' + esc(when) +
+          (n.delayMinutes ? ' (+' + n.delayMinutes + ')' : '') + '</span>';
+      }).join('');
       box.className = 'live';
       box.innerHTML = '<span class="dot"></span><div style="flex:1">' +
         '<div class="kv"><b>Status</b><span>' + delay + '</span></div>' +
+        (l.station ? '<div class="kv"><b>Station</b><span>' + esc(l.station) + '</span></div>' : '') +
+        (l.line ? '<div class="kv"><b>Zug</b><span>' + esc(l.line) + '</span></div>' : '') +
         (plat ? '<div class="kv"><b>Gleis</b><span>' + plat + '</span></div>' : '') +
         (pos ? '<div class="kv"><b>Position</b><span>' + esc(pos) + '</span></div>' : '') +
         salida + llegada +
@@ -908,11 +934,12 @@
         '</div>';
       box.classList.remove('hidden');
     }
-    function startLive(tripId) {
+    function startLive(tripId, date) {
       stopLive();
+      const query = date ? '?date=' + encodeURIComponent(date) : '';
       const poll = () => {
         if (state.tripId !== tripId) return;
-        api('/api/trains/' + tripId + '/realtime')
+        api('/api/trains/' + tripId + '/realtime' + query)
           .then(d => { if (state.tripId === tripId) renderLive(d); })
           .catch(() => {});
       };
@@ -939,7 +966,8 @@
       es.addEventListener('realtime', e => {
         try {
           const d = JSON.parse(e.data);
-          if (d && d.available) renderLive(d);
+          const isToday = !state.tripDate || state.tripDate === localDateStr(new Date());
+          if (d && d.available && isToday) renderLive(d);
         } catch (err) {}
       });
       es.onerror = () => {};
@@ -954,7 +982,7 @@
       $('reserveTitle').textContent = 'Sitz Wagen ' + carNumber + ' - ' + seatNumber + ' · ' + seg.from + ' → ' + seg.to;
       $('reserveBody').innerHTML =
         '<div class="kv"><b>Teilstrecke</b><span>' + esc(seg.from) + ' → ' + esc(seg.to) + '</span></div>' +
-        '<div class="kv"><b>Zeit</b><span>' + esc(seg.departureTime) + ' - ' + esc(seg.arrivalTime) + '</span></div>' +
+        '<div class="kv"><b>Zeit</b><span>' + esc(hhmm(seg.departureTime)) + ' - ' + esc(hhmm(seg.arrivalTime, true)) + '</span></div>' +
         '<div class="kv"><b>Entfernung</b><span>' + Math.round(seg.distanceKm) + ' km</span></div>' +
         '<div class="kv"><b>Sitzpreis</b><span>' + fmtMoney(seg.price) + '</span></div>' +
         '<div class="kv" style="margin:10px 0"><b>Benutzer</b><span>' + esc(state.email || '-') + '</span></div>' +
@@ -979,7 +1007,13 @@
           $('cancelHoldBtn').onclick = () => cancelHold();
           startCountdown(res.expiresAt);
         })
-        .catch(err => { if (!err.message.includes('401')) toast('Hold fehlgeschlagen: ' + err.message, 'err'); });
+        .catch(err => {
+          if (err.code === 'UNAUTHORIZED') {
+            hide($('reserveOverlay'));
+            return openAuth('Deine Sitzung ist abgelaufen. Bitte erneut anmelden.');
+          }
+          toast('Hold fehlgeschlagen: ' + err.message, 'err');
+        });
     }
     function startCountdown(expiresAt) {
       if (state.holdTimer) clearInterval(state.holdTimer);
@@ -1015,7 +1049,13 @@
           // el SSE puede ya haber recoloreado; refrescamos por si acaso
           loadSegment(state.currentSegmentId);
         })
-        .catch(err => toast('Zahlung fehlgeschlagen: ' + err.message, 'err'));
+        .catch(err => {
+          if (err.code === 'UNAUTHORIZED') {
+            hide($('reserveOverlay'));
+            return openAuth('Deine Sitzung ist abgelaufen. Bitte erneut anmelden.');
+          }
+          toast('Zahlung fehlgeschlagen: ' + err.message, 'err');
+        });
     }
     function cancelHold() {
       if (!state.currentHold) return;
@@ -1026,7 +1066,13 @@
           toast('Buchung storniert, Sitzplatz freigegeben.', 'ok');
           loadSegment(state.currentSegmentId);
         })
-        .catch(err => toast('Stornierung fehlgeschlagen: ' + err.message, 'err'));
+        .catch(err => {
+          if (err.code === 'UNAUTHORIZED') {
+            hide($('reserveOverlay'));
+            return openAuth('Deine Sitzung ist abgelaufen. Bitte erneut anmelden.');
+          }
+          toast('Stornierung fehlgeschlagen: ' + err.message, 'err');
+        });
     }
 
     /* ---------- demo simulate ---------- */
@@ -1092,14 +1138,18 @@
     function hideError() { $('errorBanner').classList.add('hidden'); }
 
     function setupAutocomplete(inputId, listId) {
+      let seq = 0;
       $(inputId).addEventListener('input', debounce(async (e) => {
         const q = e.target.value.trim();
-        if (q.length < 2) return;
+        const list = $(listId);
+        if (q.length < 1) { seq++; list.innerHTML = ''; return; }
+        const mySeq = ++seq;
         try {
-          const stops = await api('/api/trains/stops?q=' + encodeURIComponent(q));
-          $(listId).innerHTML = stops.map(s => '<option value="' + esc(s.stopName) + '"></option>').join('');
+          const stops = await api('/api/trains/stops?q=' + encodeURIComponent(q) + '&limit=50');
+          if (mySeq !== seq) return;
+          list.innerHTML = stops.map(s => '<option value="' + esc(s.stopName) + '"></option>').join('');
         } catch (err) {}
-      }, 250));
+      }, 200));
     }
     function debounce(fn, ms) {
       let t; return function (...a) { clearTimeout(t); t = setTimeout(() => fn.apply(this, a), ms); };
@@ -1136,6 +1186,8 @@
     setupAutocomplete('origin', 'stops-origin');
     setupAutocomplete('destination', 'stops-dest');
     setBadges();
+    // Token aus einer früheren Sitzung? Beim Laden prüfen und ggf. still verwerfen.
+    if (state.token) api('/api/auth/me').catch(() => {});
     doSearch();
     detectOriginByGps();
   </script>

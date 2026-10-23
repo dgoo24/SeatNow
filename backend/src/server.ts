@@ -8,11 +8,13 @@ import { sweepExpiredHolds } from './modules/bookings/bookings.service';
 import { sweepNoShowBookings } from './modules/bookings/checkin.service';
 import { onRedisKeyExpired } from './modules/inventory/hold-expiry';
 import { startRealtimePoller } from './modules/realtime';
+import { warmStopNamesCache } from './modules/trains/trains.service';
 
 async function main(): Promise<void> {
   await connectDatabase();
   // eslint-disable-next-line no-console
   console.log('[db] Conectado a PostgreSQL');
+  warmStopNamesCache();
 
   try {
     await connectRedis();

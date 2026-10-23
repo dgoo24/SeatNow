@@ -1,8 +1,10 @@
 import { prisma } from '../../shared/database/prisma';
+import { Prisma } from '@prisma/client';
 import { NotFoundError } from '../../shared/errors';
 import { redis } from '../../shared/redis/redis';
 import { getTrainNumbersFast, realtimeStatus, type TripTrainNumber } from '../realtime';
 import { inventoryProvider } from '../inventory';
+import { buildStopIndex, rankStops, type StopEntry } from './stop-match';
 
 export interface SearchTripsInput {
   origin?: string;
@@ -45,57 +47,76 @@ function berlinDate(date = new Date()): string {
 /** Búsqueda por TRAMO + fecha real de servicio (Teilstrecken en el día elegido). */
 export async function searchTrips(input: SearchTripsInput) {
   const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+  // Alias/nombres coloquiales -> nombre oficial del feed ("Freiburg im Breisgau"
+  // -> "Freiburg, Hauptbahnhof"). Si no hay coincidencia fiable se usa el texto.
+  const origin = input.origin ? ((await resolveStopName(input.origin)) ?? input.origin) : input.origin;
+  const destination = input.destination
+    ? ((await resolveStopName(input.destination)) ?? input.destination)
+    : input.destination;
 
   if (input.date) {
     const d = new Date(input.date);
     if (!Number.isNaN(d.getTime())) {
       const { start, end } = dayRange(d);
-      const activeDates = await prisma.tripServiceDate.findMany({
-        where: { serviceDate: { gte: start, lte: end } },
-        select: { tripId: true },
-      });
-      const tripIds = [...new Set(activeDates.map((x) => x.tripId))];
-      if (tripIds.length === 0) return [];
 
-      const segments = await prisma.segment.findMany({
-        where: {
-          tripId: { in: tripIds },
-          ...(input.origin
-            ? { originStopName: { contains: input.origin, mode: 'insensitive' } }
-            : {}),
-          ...(input.destination
-            ? { destinationStopName: { contains: input.destination, mode: 'insensitive' } }
-            : {}),
-          ...(() => {
-            const where: Record<string, unknown> = {};
-            const tf = input.timeFrom ? input.timeFrom.replace(/:\d{2}$/, ':00') : undefined;
-            const ttSrc = input.timeTo ? input.timeTo.replace(/:\d{2}$/, ':00') : undefined;
-            const field = input.timeType === 'arrival' ? 'arrivalTime' : 'departureTime';
-            if (input.timeFrom && input.timeTo) {
-              const tt = input.timeTo.length >= 5 ? (input.timeTo.slice(0, 5) + ':59') : ttSrc;
-              where[field] = { gte: tf, lte: tt };
-            } else if (input.timeFrom) {
-              where[field] = { gte: tf };
-            } else if (input.timeTo) {
-              const tt = input.timeTo.length >= 5 ? (input.timeTo.slice(0, 5) + ':00') : ttSrc;
-              where[field] = { lte: tt };
-            }
-            return Object.keys(where).length ? where : {};
-          })(),
-        },
+      const escapeLike = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
+      const originLike = origin ? `%${escapeLike(origin)}%` : null;
+      const destLike = destination ? `%${escapeLike(destination)}%` : null;
+
+      const timeField =
+        input.timeType === 'arrival' ? Prisma.raw('seg.arrival_time') : Prisma.raw('seg.departure_time');
+      const tf = input.timeFrom ? input.timeFrom.replace(/:\d{2}$/, ':00') : undefined;
+      const ttSrc = input.timeTo ? input.timeTo.replace(/:\d{2}$/, ':00') : undefined;
+      const tt = input.timeTo && input.timeTo.length >= 5 ? input.timeTo.slice(0, 5) + ':59' : ttSrc;
+      const originCond = originLike
+        ? Prisma.sql`AND seg.origin_stop_name ILIKE ${originLike}`
+        : Prisma.empty;
+      const destCond = destLike
+        ? Prisma.sql`AND seg.destination_stop_name ILIKE ${destLike}`
+        : Prisma.empty;
+      const timeCond =
+        input.timeFrom && input.timeTo
+          ? Prisma.sql`AND ${timeField} >= ${tf} AND ${timeField} <= ${tt}`
+          : input.timeFrom
+            ? Prisma.sql`AND ${timeField} >= ${tf}`
+            : input.timeTo
+              ? Prisma.sql`AND ${timeField} <= ${tt}`
+              : Prisma.empty;
+
+      // Un solo tramo por viaje (el más temprano) y solo `limit` filas: con el
+      // feed completo (miles de viajes) traer todos los tramos del día era lento.
+      const picked = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM (
+          SELECT DISTINCT ON (seg.trip_id) seg.id, seg.departure_time
+          FROM segments seg
+          JOIN trip_service_dates tsd ON tsd.trip_id = seg.trip_id
+          WHERE tsd.service_date >= ${start}::date AND tsd.service_date <= ${end}::date
+          ${originCond}
+          ${destCond}
+          ${timeCond}
+          ORDER BY seg.trip_id, seg.departure_time
+        ) p
+        ORDER BY p.departure_time
+        LIMIT ${limit}
+      `;
+      if (picked.length === 0) return [];
+
+      const ids = picked.map((p) => p.id);
+      const found = await prisma.segment.findMany({
+        where: { id: { in: ids } },
         include: { trip: true },
-        orderBy: { departureTime: 'asc' },
       });
+      const byId = new Map(found.map((s) => [s.id, s]));
+      const segments = ids
+        .map((id) => byId.get(id))
+        .filter((s): s is NonNullable<typeof s> => Boolean(s));
 
       // Numeros de tren reales (p. ej. "ICE 786") del tablero HAFAS de Fulda.
       // Best-effort con timeout: no debe bloquear la busqueda si HAFAS tarda.
       const numbers: Record<string, TripTrainNumber> = await getTrainNumbersFast(input.date);
 
-      const byTrip = new Map<string, (typeof segments)[number]>();
-      for (const s of segments) if (!byTrip.has(s.tripId)) byTrip.set(s.tripId, s);
-
       const rows = await Promise.all(
-        [...byTrip.values()].slice(0, limit).map(async (segment) => {
+        segments.map(async (segment) => {
           let availableSeats = 0;
           try {
             const availability = await inventoryProvider().getSegmentAvailability(segment.id);
@@ -128,8 +149,8 @@ export async function searchTrips(input: SearchTripsInput) {
 
   // Fallback sin fecha: cualquier viaje (ignora TripServiceDate).
   const where: Record<string, unknown> = {};
-  if (input.origin) where.originStop = { contains: input.origin, mode: 'insensitive' };
-  if (input.destination) where.destinationStop = { contains: input.destination, mode: 'insensitive' };
+  if (origin) where.originStop = { contains: origin, mode: 'insensitive' };
+  if (destination) where.destinationStop = { contains: destination, mode: 'insensitive' };
 
   const trips = await prisma.trip.findMany({
     where,
@@ -250,35 +271,47 @@ export async function getSegmentAvailability(tripId: string, segmentId: string) 
 }
 
 /** Autocompletar estaciones (solo nombres que existen en los tramos). */
-export async function listStops(query: string, limit = 20) {
-  const q = query.trim();
-  if (q.length === 0) return [];
-  const rows = await prisma.segment.findMany({
-    where: {
-      OR: [
-        { originStopName: { contains: q, mode: 'insensitive' } },
-        { destinationStopName: { contains: q, mode: 'insensitive' } },
-      ],
-    },
-    select: { originStopName: true, destinationStopName: true },
-    take: 500,
-  });
-  const needle = q.toLowerCase();
-  const seen = new Set<string>();
-  const unique: { stopId: string; stopName: string }[] = [];
-  const add = (name: string) => {
-    if (!name.toLowerCase().includes(needle)) return;
-    const key = name.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    unique.push({ stopId: key, stopName: name });
-  };
-  for (const r of rows) {
-    add(r.originStopName);
-    add(r.destinationStopName);
+let stopIndexCache: { at: number; entries: StopEntry[] } | null = null;
+const STOP_NAMES_TTL_MS = 30 * 60_000;
+
+async function stopIndex(): Promise<StopEntry[]> {
+  if (stopIndexCache && Date.now() - stopIndexCache.at < STOP_NAMES_TTL_MS) {
+    return stopIndexCache.entries;
   }
-  unique.sort((a, b) => a.stopName.localeCompare(b.stopName));
-  return unique.slice(0, Math.min(Math.max(limit, 1), 50));
+  const rows = await prisma.$queryRaw<{ name: string }[]>`
+    SELECT name FROM (
+      SELECT DISTINCT origin_stop_name AS name FROM segments
+      UNION
+      SELECT DISTINCT destination_stop_name AS name FROM segments
+    ) s
+    ORDER BY name
+  `;
+  const entries = buildStopIndex(rows.map((r) => r.name));
+  stopIndexCache = { at: Date.now(), entries };
+  return entries;
+}
+
+export function warmStopNamesCache(): void {
+  void stopIndex().catch(() => undefined);
+}
+
+/**
+ * Resuelve texto libre a un nombre oficial del feed. Solo acepta coincidencias
+ * muy fiables (nombre exacto, alias conocido o prefijo) para no inventar rutas.
+ */
+export async function resolveStopName(input: string): Promise<string | null> {
+  const entries = await stopIndex();
+  const ranked = rankStops(entries, input, 900);
+  return ranked[0]?.entry.name ?? null;
+}
+
+export async function listStops(query: string, limit = 20) {
+  if (query.trim().length === 0) return [];
+  const capped = Math.min(Math.max(limit, 1), 50);
+  const entries = await stopIndex();
+  return rankStops(entries, query)
+    .slice(0, capped)
+    .map((s) => ({ stopId: s.entry.name.toLowerCase(), stopName: s.entry.name }));
 }
 
 /** Distancia en km entre dos puntos (haversine). */

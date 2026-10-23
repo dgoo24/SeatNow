@@ -97,7 +97,7 @@ export function getTrainNumbers(date: string): Promise<Record<string, TripTrainN
  */
 export function getTrainNumbersFast(
   date: string,
-  timeoutMs = 1500,
+  timeoutMs = 300,
 ): Promise<Record<string, TripTrainNumber>> {
   const empty = (): Record<string, TripTrainNumber> => ({});
   const compute = getTrainNumbers(date).catch(empty);
@@ -125,7 +125,7 @@ async function computeTrainNumbers(date: string): Promise<Record<string, TripTra
   if (cached) {
     try {
       const parsed = JSON.parse(cached) as Record<string, TripTrainNumber>;
-      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) return parsed;
+      if (parsed && typeof parsed === 'object') return parsed;
     } catch {
       /* recalcula */
     }
@@ -133,11 +133,15 @@ async function computeTrainNumbers(date: string): Promise<Record<string, TripTra
 
   const start = new Date(`${date}T00:00:00Z`);
   const end = new Date(`${date}T23:59:59Z`);
-  const active = await prisma.tripServiceDate.findMany({
-    where: { serviceDate: { gte: start, lte: end } },
-    select: { tripId: true },
-  });
-  const tripIds = [...new Set(active.map((a) => a.tripId))];
+  // Solo viajes del día que pasan por Fulda: el tablero HAFAS consultado es de Fulda.
+  const fuldaTrips = await prisma.$queryRaw<{ trip_id: string }[]>`
+    SELECT DISTINCT tsd.trip_id
+    FROM trip_service_dates tsd
+    JOIN trip_stops ts ON ts.trip_id = tsd.trip_id
+    WHERE tsd.service_date >= ${start}::date AND tsd.service_date <= ${end}::date
+      AND ts.stop_name ILIKE '%fulda%'
+  `;
+  const tripIds = fuldaTrips.map((r) => r.trip_id);
   const result: Record<string, TripTrainNumber> = {};
 
   if (tripIds.length === 0) {
