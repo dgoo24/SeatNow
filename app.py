@@ -1326,6 +1326,12 @@ def view_search() -> None:
                 "Bitte wähle Start und Ziel. Nutze die Vorschläge beim Tippen "
                 "oder klicke oben auf eine Beispielstrecke."
             )
+        elif str(params.get("origin")).strip().lower() == str(
+            params.get("destination")
+        ).strip().lower():
+            st.warning(
+                "Start und Ziel sind identisch. Bitte wähle zwei verschiedene Bahnhöfe."
+            )
         elif unknown:
             st.warning(
                 f"Diese Bahnhöfe wurden nicht erkannt: {', '.join(unknown)}. "
