@@ -103,6 +103,8 @@ Die App ist damit gleichzeitig:
 - **Suchen ohne Konto.** Erst beim Reservieren wird eine Anmeldung benötigt.
 - **Zugnummern werden nachgeladen**, wenn der Live-Dienst sie noch nicht kennt – mit „Ergebnisse aktualisieren“.
 - **Zeitzone Europe/Berlin** und GTFS-Zeiten über 24:00 Uhr (z. B. `25:10` = 01:10 am Folgetag) werden korrekt dargestellt.
+- **Klare Navigation:** sichtbar sind nur **Suche** und **Buchungen**. Die Fahrt-Ansicht öffnet sich erst über „Sitzplatz wählen“ – sie ist kein eigener Navigationspunkt.
+- **5-Minuten-Fenster auf der Fahrt:** Rechts neben dem Zugkopf läuft ein Countdown zum Reservieren. Ab der letzten Minute wird er rot; ohne Reservierung schließt sich die Fahrt automatisch und die Auswahl wird verworfen.
 
 ### 🪑 Wagenplan & Reservierung
 
@@ -113,7 +115,7 @@ Die App ist damit gleichzeitig:
   - 🔴 **gebucht**.
 - **Tooltips** zeigen, welche anderen Abschnitte desselben Sitzes belegt sind.
 - **Sitzplatz antippen** und mit einem Klick reservieren.
-- **Hold mit Countdown:** Der Platz wird für einige Minuten gesperrt. Ein Streamlit-Fragment aktualisiert den Countdown **jede Sekunde**; ist die Zeit abgelaufen, wird der Platz freigegeben.
+- **Hold mit Countdown:** Der Platz wird für 5 Minuten gesperrt. Ein Streamlit-Fragment aktualisiert den Countdown **jede Sekunde**; ist die Zeit abgelaufen, wird der Platz freigegeben.
 - **Live-Aktualisierung** des Wagenplans alle 30 Sekunden, Availability-Cache nur 5 Sekunden.
 - **Demo-Kauf** eines anderen Passagiers (nur im Entwicklungsmodus), um die Live-Aktualisierung sofort zu sehen.
 
@@ -146,12 +148,11 @@ Die App ist damit gleichzeitig:
 - **No-Show-Regel:** Wer nach der Abfahrt am Einstiegsbahnhof nicht eincheckt, dessen Platz wird nach einer Kulanzzeit für die restlichen Abschnitte freigegeben.
 - **Stornieren** gibt den Platz sofort wieder frei – in der App für Buchungen mit Status „Zahlung offen“ oder „Bestätigt“.
 
-### 🛠️ Störungen & Admin
+### 🛠️ Störungen & Betrieb
 
 - **Kritische Verspätung** (Standard: ≥ 60 Minuten) löst eine proaktive Benachrichtigung aus.
 - **Zugausfall:** Das System sucht automatisch eine Ersatzverbindung am selben Tag. Klappt das, wird umgebucht und ein neues QR-Ticket erzeugt. Sonst landet die Buchung in `CANCEL_PENDING_REFUND`.
 - **Deduplizierung** über Redis: dieselbe Störung wird sechs Stunden lang nicht erneut verarbeitet.
-- **Admin-Bereich:** offene Reservierungen und alle Buchungen als Tabelle.
 
 ### 🧪 Demo-Modus – die App fährt auch ohne Backend
 

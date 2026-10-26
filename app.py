@@ -24,13 +24,14 @@ DIALOG_TIMEOUT = (5, 90)
 NAV_SEARCH = "Verbindung suchen"
 NAV_TRIP = "Wagenansicht"
 NAV_BOOKINGS = "Meine Buchungen"
-NAV_ADMIN = "Admin"
 PAGES = {
     "Suche": NAV_SEARCH,
     "Fahrt": NAV_TRIP,
     "Buchungen": NAV_BOOKINGS,
-    "Admin": NAV_ADMIN,
 }
+# "Fahrt" ist kein Navigationspunkt: Die Ansicht öffnet sich erst über
+# "Sitzplatz wählen" und bleibt für FAHRT_WINDOW_SECONDS offen.
+FAHRT_WINDOW_SECONDS = 5 * 60
 
 FLASH_ICONS = {
     "ok": ":material/check_circle:",
@@ -47,9 +48,9 @@ STATUS_COLORS = {
     "FAILED": "red",
 }
 SEAT_STYLES = {
-    "AVAILABLE": ("#123d2b", "#2fbf71", "#a7f3d0"),
-    "HELD": ("#3d2f10", "#f59e0b", "#fde68a"),
-    "BOOKED": ("#3d1517", "#ef4444", "#fecaca"),
+    "AVAILABLE": ("#10281f", "#2f9e6a", "#a7f3d0"),
+    "HELD": ("#2c2410", "#ffb020", "#ffe0a3"),
+    "BOOKED": ("#2f1417", "#ff4d5e", "#ffc9d0"),
 }
 STATUS_LABELS = {
     "CONFIRMED": "Bestätigt",
@@ -63,8 +64,264 @@ PAGE_HINTS = {
     "Suche": "Strecke wählen, Verbindungen vergleichen und Sitzplatz sichern.",
     "Fahrt": "Teilstrecke prüfen, Wagenplan lesen und Buchung abschließen.",
     "Buchungen": "Tickets, Status und Check-in an einem Ort.",
-    "Admin": "Offene Reservierungen und alle Buchungen einsehen.",
 }
+
+APP_CSS = """
+:root {
+  --sn-red: #e2001a;
+  --sn-red-light: #ff2d45;
+  --sn-red-soft: rgba(226, 0, 26, .14);
+  --sn-panel: #14181e;
+  --sn-panel-2: #171c23;
+  --sn-border: #2a3039;
+  --sn-text: #f3f5f8;
+  --sn-muted: #96a0ae;
+  --sn-green: #35c07a;
+  --sn-amber: #ffb020;
+}
+
+/* ---------- Grundgerüst ---------- */
+[data-testid="stAppViewContainer"] {
+  background:
+    radial-gradient(1000px 480px at 8% -8%, rgba(226, 0, 26, .16), transparent 62%),
+    radial-gradient(900px 460px at 96% 4%, rgba(57, 116, 176, .12), transparent 65%),
+    linear-gradient(180deg, #0b0d10 0%, #0a0c0f 100%);
+  background-attachment: fixed;
+}
+[data-testid="stHeader"] { background: transparent; }
+[data-testid="stMainBlockContainer"] {
+  max-width: 1080px !important;
+  padding-top: 2.4rem;
+  padding-bottom: 5rem;
+}
+[data-testid="stSidebar"] { background: #101318; }
+footer { visibility: hidden; }
+
+h1, h2, h3, h4, h5 {
+  font-family: "Barlow Semi Condensed", "Roboto Condensed", sans-serif;
+  letter-spacing: .005em;
+}
+h2 { font-size: 1.9rem; }
+h3 { font-size: 1.35rem; }
+
+/* ---------- Kopfbereich ---------- */
+.st-key-app_header {
+  position: relative;
+  overflow: hidden;
+  padding: 1.15rem 1.4rem 1.1rem 1.55rem;
+  border: 1px solid var(--sn-border);
+  border-radius: 20px;
+  background:
+    linear-gradient(120deg, rgba(226, 0, 26, .22) 0%, rgba(24, 28, 35, .97) 38%, rgba(15, 18, 22, .99) 100%);
+  box-shadow: 0 24px 50px -34px rgba(0, 0, 0, .95), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.st-key-app_header::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, #ff3b4f, #b80015);
+}
+.st-key-app_header::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  top: -90px;
+  width: 230px;
+  height: 230px;
+  background: radial-gradient(circle, rgba(226, 0, 26, .3), transparent 68%);
+  pointer-events: none;
+}
+.st-key-app_header h2 { margin: 0 0 .15rem; font-size: 1.9rem; }
+.sn-eyebrow {
+  margin-bottom: .15rem;
+  color: #ff8a97;
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+}
+
+/* ---------- Navigation ---------- */
+.st-key-main_nav button {
+  min-height: 2.7rem;
+  font-size: .95rem;
+  letter-spacing: .01em;
+}
+
+/* ---------- Karten ---------- */
+.st-key-search_card {
+  padding: 1.15rem 1.3rem !important;
+  border: 1px solid var(--sn-border) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #171b22 0%, #11151a 100%);
+  box-shadow: 0 26px 50px -38px rgba(0, 0, 0, .9);
+}
+.st-key-trip_head { padding: .3rem 0 .1rem; }
+.st-key-trip_head h3 { margin-bottom: .1rem; }
+.st-key-hold_card {
+  border-color: rgba(226, 0, 26, .55) !important;
+  background:
+    linear-gradient(180deg, rgba(226, 0, 26, .10), rgba(20, 24, 30, .98)) !important;
+}
+.st-key-ticket_card {
+  border-color: rgba(53, 192, 122, .45) !important;
+  background:
+    linear-gradient(180deg, rgba(53, 192, 122, .08), rgba(18, 22, 27, .98)) !important;
+}
+[class*="st-key-conn_"] {
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+[class*="st-key-conn_"]:hover {
+  border-color: rgba(226, 0, 26, .6) !important;
+  box-shadow: 0 18px 40px -30px rgba(226, 0, 26, .7);
+  transform: translateY(-1px);
+}
+[class*="st-key-booking_"] { border-color: #2f3640 !important; }
+.st-key-steps_card {
+  padding: 1rem 1.2rem;
+  border: 1px solid #232932;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(22, 26, 32, .86), rgba(14, 17, 21, .86));
+}
+.stMarkdownBadge {
+  padding: .18rem .6rem !important;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 999px !important;
+  font-size: .74rem !important;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+/* ---------- Schaltflächen ---------- */
+[data-testid="stBaseButton-primary"] {
+  border: 1px solid #ff5f6e !important;
+  background: linear-gradient(180deg, #f21b32 0%, #c90017 100%) !important;
+  color: #fff !important;
+  font-weight: 650;
+  letter-spacing: .01em;
+  box-shadow: 0 12px 26px -16px rgba(226, 0, 26, .9);
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+[data-testid="stBaseButton-primary"]:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px -14px rgba(226, 0, 26, .95);
+}
+[data-testid="stBaseButton-primary"]:disabled {
+  filter: grayscale(.55) brightness(.75);
+  box-shadow: none;
+}
+[data-testid="stBaseButton-secondary"] {
+  border: 1px solid #333b46 !important;
+  background: #191e25 !important;
+  color: var(--sn-text) !important;
+  font-weight: 550;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+[data-testid="stBaseButton-secondary"]:hover {
+  border-color: rgba(226, 0, 26, .75) !important;
+  background: #1f242c !important;
+  color: #fff !important;
+}
+
+/* ---------- Formularelemente ---------- */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input,
+[data-testid="stTimeInput"] input {
+  background: transparent !important;
+  color: var(--sn-text) !important;
+  font-weight: 500;
+}
+[data-testid="stWidgetLabel"] p {
+  color: #c3cbd6;
+  font-size: .82rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+/* ---------- Hinweise, Kennzahlen, Fortschritt ---------- */
+[data-testid="stAlert"] { border-radius: 14px; }
+[data-testid="stMetric"] {
+  padding: .8rem .95rem;
+  border: 1px solid var(--sn-border);
+  border-radius: 14px;
+  background: #12161b;
+}
+[data-testid="stMetricValue"] {
+  font-family: "Barlow Semi Condensed", sans-serif;
+  color: #fff;
+}
+[data-testid="stProgress"] > div > div > div {
+  background-image: linear-gradient(90deg, #8d0011, #ff2d45) !important;
+}
+[data-testid="stExpander"] details {
+  overflow: hidden;
+  border: 1px solid var(--sn-border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #14181e, #101318);
+}
+[data-testid="stExpander"] summary { font-weight: 600; }
+[data-testid="stExpander"] summary:hover { color: #ff8a97; }
+[data-testid="stCode"] pre {
+  border: 1px solid var(--sn-border);
+  border-radius: 12px;
+  background: #0f1216 !important;
+}
+
+/* ---------- Zähler auf der Fahrt-Seite ---------- */
+.sn-timer {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  width: 100%;
+  padding: .55rem .8rem;
+  border: 1px solid #2c333d;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #171b22, #111419);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+  color: #9fb0c4;
+}
+.sn-timer-body { display: flex; flex-direction: column; line-height: 1.05; }
+.sn-timer-label {
+  color: var(--sn-muted);
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.sn-timer-clock {
+  color: var(--sn-text);
+  font-family: "Barlow Semi Condensed", "Roboto Condensed", sans-serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .03em;
+}
+.sn-timer.is-urgent {
+  border-color: #ff3b4f;
+  background: linear-gradient(180deg, rgba(226, 0, 26, .22), rgba(80, 0, 8, .38));
+  color: #ff8894;
+  animation: sn-pulse 1.2s ease-in-out infinite;
+}
+.sn-timer.is-urgent .sn-timer-label { color: #ffb3bb; }
+.sn-timer.is-urgent .sn-timer-clock { color: #ff5566; }
+.sn-timer.is-done {
+  border-color: rgba(53, 192, 122, .55);
+  background: linear-gradient(180deg, rgba(53, 192, 122, .16), rgba(15, 22, 19, .95));
+  color: var(--sn-green);
+}
+.sn-timer.is-done .sn-timer-clock { font-size: 1.02rem; color: #8ef0bc; }
+@keyframes sn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(226, 0, 26, .45); }
+  50% { box-shadow: 0 0 0 9px rgba(226, 0, 26, 0); }
+}
+
+/* ---------- Kleinkram ---------- */
+[data-testid="stCaptionContainer"] p { color: var(--sn-muted); }
+hr { border-color: var(--sn-border); }
+"""
 
 
 class ApiError(Exception):
@@ -503,6 +760,7 @@ def init_state() -> None:
         "search_params": None,
         "searched": False,
         "trip_ctx": None,
+        "fahrt_deadline": None,
         "hold": None,
         "ticket": None,
         "flash": None,
@@ -616,6 +874,7 @@ def reset_search() -> None:
     st.session_state.searched = False
     st.session_state.search_notice = None
     st.session_state.trip_ctx = None
+    st.session_state.fahrt_deadline = None
     st.session_state.hold = None
     st.session_state.ticket = None
     st.session_state.f_date = dt.date.today()
@@ -678,6 +937,7 @@ def open_trip(row: dict[str, Any]) -> None:
         st.session_state[f"segment_{row['id']}"] = row["segmentId"]
     st.session_state.hold = None
     st.session_state.ticket = None
+    st.session_state.fahrt_deadline = time.time() + FAHRT_WINDOW_SECONDS
     st.session_state.page = "Fahrt"
 
 
@@ -697,10 +957,14 @@ def refresh_search() -> None:
 
 def go_search() -> None:
     st.session_state.page = "Suche"
+    st.session_state.trip_ctx = None
+    st.session_state.fahrt_deadline = None
 
 
 def go_bookings() -> None:
     st.session_state.page = "Buchungen"
+    st.session_state.trip_ctx = None
+    st.session_state.fahrt_deadline = None
 
 
 def do_search(
@@ -793,26 +1057,26 @@ def seat_map_html(availability: list[dict[str, Any]]) -> str:
                 )
             )
         blocks.append(
-            '<div style="flex:1 1 190px;min-width:190px;padding:10px 12px;border-radius:10px;'
-            'border:1px solid #262e47;background:#101527">'
+            '<div style="flex:1 1 190px;min-width:190px;padding:10px 12px;border-radius:12px;'
+            'border:1px solid #2a3039;background:#0f1216">'
             '<div style="font-size:12px;font-weight:700;letter-spacing:.04em;'
-            'text-transform:uppercase;color:#8fa0c4;margin-bottom:8px">Wagen {car}</div>'
+            'text-transform:uppercase;color:#8f9aa8;margin-bottom:8px">Wagen {car}</div>'
             '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">{cells}</div>'
             "</div>".format(car=car, cells="".join(cells))
         )
 
     legend = (
-        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:2px 0 8px;font-size:12px;color:#aab4cc">'
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:2px 0 8px;font-size:12px;color:#96a0ae">'
         '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;'
-        'background:#2fbf71;margin-right:5px"></span>frei</span>'
+        'background:#35c07a;margin-right:5px"></span>frei</span>'
         '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;'
-        'background:#f59e0b;margin-right:5px"></span>reserviert</span>'
+        'background:#ffb020;margin-right:5px"></span>reserviert</span>'
         '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;'
-        'background:#ef4444;margin-right:5px"></span>gebucht</span>'
+        'background:#ff4d5e;margin-right:5px"></span>gebucht</span>'
         "</div>"
     )
     if not blocks:
-        blocks.append('<div style="color:#aab4cc">Keine Sitzplätze gefunden.</div>')
+        blocks.append('<div style="color:#96a0ae">Keine Sitzplätze gefunden.</div>')
     return legend + '<div style="display:flex;flex-wrap:wrap;gap:12px">' + "".join(blocks) + "</div>"
 
 
@@ -822,13 +1086,13 @@ def stops_html(details: dict[str, Any]) -> str:
     for stop in details.get("stops") or []:
         name = str(stop.get("stopName") or "")
         active = name in focus
-        background = "#2a0f14" if active else "#141a2b"
-        border = "#ec0016" if active else "#262e47"
-        color = "#ffb3bd" if active else "#aab4cc"
+        background = "#2a0b10" if active else "#141920"
+        border = "#e2001a" if active else "#2a3039"
+        color = "#ffb3bd" if active else "#9aa5b4"
         chips.append(
             '<span style="display:inline-flex;align-items:center;gap:6px;padding:5px 9px;'
             "border-radius:999px;border:1px solid {border};background:{background};color:{color};"
-            'font-size:12px">{name} <b style="color:#eef1f8">{time}</b></span>'.format(
+            'font-size:12px">{name} <b style="color:#f3f5f8">{time}</b></span>'.format(
                 border=border,
                 background=background,
                 color=color,
@@ -848,10 +1112,69 @@ def hold_countdown(expires_at: str) -> None:
         st.rerun(scope="app")
         return
     minutes, seconds = divmod(remaining, 60)
-    color = "#f59e0b" if remaining <= 60 else "#eef1f8"
+    color = "#ff5566" if remaining <= 60 else "#ffb020"
     st.html(
-        f'<div style="font-size:13px;color:#aab4cc">Verbleibende Zeit bis zur '
-        f'Freigabe: <b style="color:{color};font-size:16px">{minutes}:{seconds:02d}</b> Min.</div>'
+        f'<div style="font-size:13px;color:#98a2b3">Verbleibende Zeit bis zur '
+        f'Freigabe: <b style="color:{color};font-size:16px;font-variant-numeric:tabular-nums">'
+        f"{minutes}:{seconds:02d}</b> Min.</div>"
+    )
+
+
+_TIMER_ICON = (
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" '
+    'stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.4"/>'
+    '<path d="M12 7.6V12l3 1.9"/></svg>'
+)
+
+
+def _timer_pill_html(label: str, clock: str, state: str) -> str:
+    return (
+        f'<div class="sn-timer {state}">'
+        f'<span class="sn-timer-icon">{_TIMER_ICON}</span>'
+        f'<span class="sn-timer-body">'
+        f'<span class="sn-timer-label">{label}</span>'
+        f'<span class="sn-timer-clock">{clock}</span>'
+        "</span></div>"
+    )
+
+
+@st.fragment(run_every="1s")
+def fahrt_countdown() -> None:
+    """5-Minuten-Fenster auf der Fahrt-Seite.
+
+    Läuft nur, solange noch kein Sitzplatz reserviert wurde. Danach zeigt die
+    Pille den Status. Bei Ablauf wird die Fahrt geschlossen und die Auswahl
+    verworfen – die Ergebnisliste bleibt erhalten.
+    """
+    if st.session_state.get("ticket"):
+        st.html(_timer_pill_html("Status", "Gebucht", "is-done"))
+        return
+    if st.session_state.get("hold"):
+        st.html(_timer_pill_html("Status", "Platz gesperrt", "is-done"))
+        return
+    deadline = st.session_state.get("fahrt_deadline")
+    if not deadline:
+        return
+    remaining = int(deadline - time.time())
+    if remaining <= 0:
+        st.session_state.trip_ctx = None
+        st.session_state.fahrt_deadline = None
+        st.session_state.page = "Suche"
+        flash(
+            "warn",
+            "Die 5 Minuten sind abgelaufen. Die Fahrt wurde geschlossen und die "
+            "Auswahl verworfen – bitte wähle die Verbindung erneut.",
+        )
+        st.rerun(scope="app")
+        return
+    minutes, seconds = divmod(remaining, 60)
+    urgent = remaining <= 60
+    st.html(
+        _timer_pill_html(
+            "Zeit zum Reservieren",
+            f"{minutes}:{seconds:02d}",
+            "is-urgent" if urgent else "",
+        )
     )
 
 
@@ -1107,37 +1430,41 @@ def hold_panel() -> None:
     if ticket:
         booking = ticket.get("booking") or {}
         seat = booking.get("seat") or {}
-        st.success("Buchung bestätigt – dein Sitzplatz ist reserviert.")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Sitzplatz", f"Wagen {seat.get('carNumber', '–')} · {seat.get('seatNumber', '–')}")
-        c2.metric("Betrag", fmt_money(booking.get("totalAmount")))
-        c3.metric("Status", status_label(booking))
-        st.caption(
-            f"Zahlung: {ticket.get('payment') or '–'} · PDF per E-Mail: "
-            f"{'gesendet' if ticket.get('emailSent') else 'SMTP nicht konfiguriert'}"
-        )
-        st.markdown("**Dein Boarding-Pass (QR)**")
-        st.caption(
-            "Zeige diesen Code beim Einstieg. Du findest das Ticket jederzeit "
-            "unter „Buchungen“."
-        )
-        st.code(booking.get("qrPayload") or "–", language=None)
-        b1, b2 = st.columns(2)
-        b1.button(
-            "Zu meinen Buchungen",
-            icon=":material/confirmation_number:",
-            on_click=go_bookings,
-            width="stretch",
-            key=f"ticket_bookings_{booking.get('id')}",
-        )
-        if b2.button(
-            "Schließen",
-            icon=":material/check:",
-            width="stretch",
-            key=f"ticket_close_{booking.get('id')}",
-        ):
-            st.session_state.ticket = None
-            st.rerun()
+        with st.container(border=True, key="ticket_card"):
+            st.success("Buchung bestätigt – dein Sitzplatz ist reserviert.")
+            c1, c2, c3 = st.columns(3)
+            c1.metric(
+                "Sitzplatz",
+                f"Wagen {seat.get('carNumber', '–')} · {seat.get('seatNumber', '–')}",
+            )
+            c2.metric("Betrag", fmt_money(booking.get("totalAmount")))
+            c3.metric("Status", status_label(booking))
+            st.caption(
+                f"Zahlung: {ticket.get('payment') or '–'} · PDF per E-Mail: "
+                f"{'gesendet' if ticket.get('emailSent') else 'SMTP nicht konfiguriert'}"
+            )
+            st.markdown("**Dein Boarding-Pass (QR)**")
+            st.caption(
+                "Zeige diesen Code beim Einstieg. Du findest das Ticket jederzeit "
+                "unter „Buchungen“."
+            )
+            st.code(booking.get("qrPayload") or "–", language=None)
+            b1, b2 = st.columns(2)
+            b1.button(
+                "Zu meinen Buchungen",
+                icon=":material/confirmation_number:",
+                on_click=go_bookings,
+                width="stretch",
+                key=f"ticket_bookings_{booking.get('id')}",
+            )
+            if b2.button(
+                "Schließen",
+                icon=":material/check:",
+                width="stretch",
+                key=f"ticket_close_{booking.get('id')}",
+            ):
+                st.session_state.ticket = None
+                st.rerun()
         return
 
     hold = st.session_state.get("hold")
@@ -1147,7 +1474,7 @@ def hold_panel() -> None:
     segment = hold["segment"]
     seat = hold["seat"]
 
-    with st.container(border=True):
+    with st.container(border=True, key="hold_card"):
         st.markdown("#### Reservierung – Schritt 3")
         st.caption(
             "Der Platz ist jetzt für dich gesperrt. Bezahle innerhalb der Zeit, "
@@ -1196,7 +1523,7 @@ def connection_card(row: dict[str, Any], index: int) -> None:
     else:
         seat_color, seat_label = "green", f"{seats} Plätze frei"
 
-    with st.container(border=True):
+    with st.container(border=True, key=f"conn_{index}"):
         left, middle, right = st.columns([1.15, 3.6, 1.35], vertical_alignment="center")
         with left:
             st.badge(train_label(row), color="blue")
@@ -1223,31 +1550,32 @@ def connection_card(row: dict[str, Any], index: int) -> None:
 
 
 def render_search_steps() -> None:
-    st.markdown("#### :material/route: So funktioniert's")
-    steps = [
-        (
-            ":material/edit_location:",
-            "1. Strecke wählen",
-            "Start und Ziel eingeben. Datum und Uhrzeit sind schon auf „jetzt“ "
-            "gesetzt, der Startbahnhof kommt per GPS.",
-        ),
-        (
-            ":material/compare_arrows:",
-            "2. Verbindung vergleichen",
-            "Abfahrt, Fahrzeit und freie Plätze vergleichen. Grün heißt: viele "
-            "Plätze frei, orange: nur wenige, rot: ausgebucht.",
-        ),
-        (
-            ":material/event_seat:",
-            "3. Sitzplatz sichern",
-            "Teilstrecke und Platz antippen, reservieren, bezahlen – danach "
-            "bekommst du dein QR-Ticket.",
-        ),
-    ]
-    for column, (icon, title, text) in zip(st.columns(3), steps):
-        with column:
-            st.markdown(f"**{icon} {title}**")
-            st.caption(text)
+    with st.container(key="steps_card"):
+        st.markdown("#### :material/route: So funktioniert's")
+        steps = [
+            (
+                ":material/edit_location:",
+                "1. Strecke wählen",
+                "Start und Ziel eingeben. Datum und Uhrzeit sind schon auf „jetzt“ "
+                "gesetzt, der Startbahnhof kommt per GPS.",
+            ),
+            (
+                ":material/compare_arrows:",
+                "2. Verbindung vergleichen",
+                "Abfahrt, Fahrzeit und freie Plätze vergleichen. Grün heißt: viele "
+                "Plätze frei, orange: nur wenige, rot: ausgebucht.",
+            ),
+            (
+                ":material/event_seat:",
+                "3. Sitzplatz sichern",
+                "Teilstrecke und Platz antippen, reservieren, bezahlen – danach "
+                "bekommst du dein QR-Ticket.",
+            ),
+        ]
+        for column, (icon, title, text) in zip(st.columns(3), steps):
+            with column:
+                st.markdown(f"**{icon} {title}**")
+                st.caption(text)
 
 
 def render_examples() -> None:
@@ -1316,7 +1644,7 @@ def view_search() -> None:
         )
     render_examples()
 
-    with st.container(border=True):
+    with st.container(border=True, key="search_card"):
         st.markdown("**Deine Reise**")
         c1, c2 = st.columns(2)
         with c1:
@@ -1536,15 +1864,20 @@ def view_trip() -> None:
         icon=":material/arrow_back:",
         on_click=go_search,
     )
-    st.subheader(
-        f":material/train: {train_label(details)} · "
-        f"{details.get('originStop')} → {details.get('destinationStop')}"
-    )
-    st.caption(
-        f"Abfahrt {hhmm(details.get('departureTime'))} · "
-        f"Ankunft {hhmm(details.get('arrivalTime'), True)} · "
-        f"{len(details.get('stops') or [])} Halte"
-    )
+    with st.container(key="trip_head"):
+        head_col, timer_col = st.columns([3.6, 1.3], vertical_alignment="center")
+        with head_col:
+            st.subheader(
+                f":material/train: {train_label(details)} · "
+                f"{details.get('originStop')} → {details.get('destinationStop')}"
+            )
+            st.caption(
+                f"Abfahrt {hhmm(details.get('departureTime'))} · "
+                f"Ankunft {hhmm(details.get('arrivalTime'), True)} · "
+                f"{len(details.get('stops') or [])} Halte"
+            )
+        with timer_col:
+            fahrt_countdown()
     render_trip_progress()
     st.html(stops_html(details))
 
@@ -1634,7 +1967,7 @@ def view_bookings() -> None:
         segment = booking.get("segment") or {}
         seat = booking.get("seat") or {}
         status = booking.get("status") or "–"
-        with st.container(border=True):
+        with st.container(border=True, key=f"booking_{booking.get('id')}"):
             c1, c2 = st.columns([3, 1], vertical_alignment="center")
             with c1:
                 st.markdown(
@@ -1685,70 +2018,12 @@ def view_bookings() -> None:
                         check_in_booking(booking["id"], booking.get("qrPayload"))
 
 
-def admin_rows(bookings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows = []
-    for booking in bookings:
-        trip = booking.get("trip") or {}
-        segment = booking.get("segment") or {}
-        seat = booking.get("seat") or {}
-        user = booking.get("user") or {}
-        rows.append(
-            {
-                "Buchung": str(booking.get("id", ""))[:8],
-                "Status": status_label(booking),
-                "Zug": trip.get("routeName") or "–",
-                "Strecke": f"{segment.get('from', '–')} → {segment.get('to', '–')}",
-                "Sitz": f"{seat.get('carNumber', '–')} / {seat.get('seatNumber', '–')}",
-                "Betrag": fmt_money(booking.get("totalAmount")),
-                "Benutzer": user.get("email") or "–",
-                "Läuft ab": fmt_datetime(booking.get("expiresAt")),
-                "Erstellt": fmt_datetime(booking.get("createdAt")),
-            }
-        )
-    return rows
-
-
-def view_admin() -> None:
-    user = st.session_state.get("user") or {}
-    if user.get("role") != "ADMIN":
-        st.warning("Dieser Bereich ist nur für Administratoren.")
-        return
-    st.subheader(":material/admin_panel_settings: Admin")
-    st.caption(
-        "Offene Reservierungen laufen nach Ablauf automatisch aus. Alle Zeiten "
-        "in Ortszeit."
-    )
-    try:
-        pending = api("/api/admin/pending-bookings", auth=True)
-        all_bookings = api("/api/admin/bookings", auth=True)
-    except ApiError as exc:
-        report_error(exc)
-        return
-
-    pending_tab, all_tab = st.tabs(
-        [f"Offene Reservierungen ({len(pending)})", f"Alle Buchungen ({len(all_bookings)})"]
-    )
-    with pending_tab:
-        if not pending:
-            st.caption("Keine offenen Reservierungen.")
-        else:
-            st.dataframe(admin_rows(pending), hide_index=True, width="stretch")
-    with all_tab:
-        if not all_bookings:
-            st.caption("Keine Buchungen.")
-        else:
-            st.dataframe(admin_rows(all_bookings), hide_index=True, width="stretch")
-
-
 def render_auth_control() -> None:
     token = st.session_state.get("token")
     user = st.session_state.get("user") or {}
     if token:
         st.markdown(f"**{user.get('fullName') or user.get('email') or 'Angemeldet'}**")
-        st.caption(
-            f"{user.get('email') or ''}"
-            + (" · Admin" if user.get("role") == "ADMIN" else "")
-        )
+        st.caption(user.get("email") or "")
         st.button(
             "Abmelden",
             icon=":material/logout:",
@@ -1779,15 +2054,20 @@ def render_auth_control() -> None:
             do_auth("/api/auth/login", "demo@trenes.local", "demo1234")
 
 
+def inject_css() -> None:
+    st.html(f"<style>{APP_CSS}</style>")
+
+
 def render_header() -> None:
     base = api_base()
     try:
         health = fetch_health(base)
     except Exception:
         health = None
-    with st.container(border=True):
+    with st.container(border=True, key="app_header"):
         brand, status, account = st.columns([2.7, 1.8, 1.5], vertical_alignment="center")
         with brand:
+            st.html('<div class="sn-eyebrow">SeatNow · Fernverkehr</div>')
             st.markdown("## :material/train: Züge MVP")
             st.caption("Deine Reise durch Deutschland · Sitzplätze pro Teilstrecke")
         with status:
@@ -1821,16 +2101,27 @@ def render_header() -> None:
 
 
 def render_nav() -> None:
-    nav_col, stats_col = st.columns([2.1, 3.6], vertical_alignment="center")
+    page = st.session_state.get("page") or "Suche"
+    on_bookings = page == "Buchungen"
+    nav_col, stats_col = st.columns([1.9, 3.8], vertical_alignment="center")
     with nav_col:
-        st.segmented_control(
-            "Bereich",
-            list(PAGES),
-            key="page",
-            label_visibility="collapsed",
-            width="stretch",
-            wrap=True,
-        )
+        with st.container(horizontal=True, gap="small", key="main_nav"):
+            st.button(
+                "Suche",
+                icon=":material/search:",
+                type="secondary" if on_bookings else "primary",
+                on_click=go_search,
+                width="stretch",
+                key="nav_search",
+            )
+            st.button(
+                "Buchungen",
+                icon=":material/confirmation_number:",
+                type="primary" if on_bookings else "secondary",
+                on_click=go_bookings,
+                width="stretch",
+                key="nav_bookings",
+            )
     with stats_col:
         try:
             stats = fetch_stats(api_base())
@@ -1853,7 +2144,7 @@ def render_nav() -> None:
                     if stats.get("lastGtfsIngestedAt"):
                         imported = fmt_datetime(stats["lastGtfsIngestedAt"]).split(" ")[0]
                         st.badge(f"GTFS-Import {imported}", color="gray")
-    hint = PAGE_HINTS.get(st.session_state.get("page") or "Suche")
+    hint = PAGE_HINTS.get(page) or PAGE_HINTS["Suche"]
     if hint:
         st.caption(f":material/lightbulb: {hint}")
 
@@ -1866,6 +2157,7 @@ st.set_page_config(
 )
 
 init_state()
+inject_css()
 ensure_backend()
 validate_session()
 render_flash()
@@ -1873,6 +2165,8 @@ render_header()
 render_nav()
 
 page = st.session_state.get("page") or "Suche"
+if page not in PAGES:
+    page = "Suche"
 nav = PAGES.get(page, NAV_SEARCH)
 if nav == NAV_SEARCH:
     view_search()
@@ -1880,5 +2174,5 @@ elif nav == NAV_TRIP:
     view_trip()
 elif nav == NAV_BOOKINGS:
     view_bookings()
-elif nav == NAV_ADMIN:
-    view_admin()
+else:
+    view_search()

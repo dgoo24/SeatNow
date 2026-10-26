@@ -1,38 +1,38 @@
-# Tema "SeatNow" · réplica la paleta ferroviaria del dashboard (backend/public/index.html)
+# Thema "SeatNow" · Deutsche-Bahn-Optik: Signalrot, Anthrazit, Stahlsilber.
 
 [theme]
 base = "dark"
-primaryColor = "#ec0016"
-backgroundColor = "#0b0d14"
-secondaryBackgroundColor = "#151a2a"
-textColor = "#eef1f8"
-linkColor = "#7dabff"
-codeTextColor = "#eef1f8"
-codeBackgroundColor = "#101527"
-borderColor = "#262e47"
-dataframeBorderColor = "#262e47"
-dataframeHeaderBackgroundColor = "#151a2a"
-baseRadius = "0.65rem"
-buttonRadius = "0.65rem"
+primaryColor = "#e2001a"
+backgroundColor = "#0b0d10"
+secondaryBackgroundColor = "#171b22"
+textColor = "#f3f5f8"
+linkColor = "#ff5f6e"
+codeTextColor = "#e9edf2"
+codeBackgroundColor = "#0f1216"
+borderColor = "#2a3039"
+dataframeBorderColor = "#2a3039"
+dataframeHeaderBackgroundColor = "#171b22"
+baseRadius = "0.7rem"
+buttonRadius = "0.7rem"
 showWidgetBorder = true
 linkUnderline = false
 baseFontSize = 16
 
-greenColor = "#2fbf71"
-orangeColor = "#f59e0b"
-redColor = "#ef4444"
-blueColor = "#7dabff"
-violetColor = "#a371f7"
-grayColor = "#8fa0c4"
+greenColor = "#35c07a"
+orangeColor = "#ffb020"
+redColor = "#ff4d5e"
+blueColor = "#5ea9e8"
+violetColor = "#a78bfa"
+grayColor = "#96a0ae"
 
-headingFontSizes = ["30px", "24px", "20px", "17px", "15px", "13px"]
-headingFontWeights = [700, 700, 600, 600, 500, 500]
+headingFontSizes = ["32px", "26px", "21px", "18px", "16px", "14px"]
+headingFontWeights = [700, 700, 650, 600, 600, 500]
 
-font = "'Roboto':https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
-headingFont = "'Roboto Condensed':https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@600;700&display=swap"
-codeFont = "'Roboto Mono':https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500;700&display=swap"
+font = "'Barlow':https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap"
+headingFont = "'Barlow Semi Condensed':https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap"
 
 [theme.sidebar]
-backgroundColor = "#0f1220"
-secondaryBackgroundColor = "#101527"
-borderColor = "#1d2440"
+backgroundColor = "#0f1216"
+secondaryBackgroundColor = "#14181e"
+borderColor = "#242a33"
