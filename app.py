@@ -1321,7 +1321,7 @@ def view_search() -> None:
             text = str(value or "").strip()
             if len(text) >= 2 and not stop_suggestions(api_base(), text):
                 unknown.append(f"„{text}“")
-        if not params.get("origin") and not params.get("destination"):
+        if not params.get("origin") or not params.get("destination"):
             st.warning(
                 "Bitte wähle Start und Ziel. Nutze die Vorschläge beim Tippen "
                 "oder klicke oben auf eine Beispielstrecke."
