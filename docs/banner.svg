@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-labelledby="bannerTitle bannerDesc">
+  <title id="bannerTitle">Züge MVP – Sitzplätze auf Teilstrecken</title>
+  <desc id="bannerDesc">Ein dunkles Bahnhofsmotiv mit einem ICE und dem Schriftzug Sitzplätze auf Teilstrecken.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0d14"/>
+      <stop offset="0.55" stop-color="#101527"/>
+      <stop offset="1" stop-color="#151a2a"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#e8edf6"/>
+      <stop offset="1" stop-color="#aebbd2"/>
+    </linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b0d14" stop-opacity="0"/>
+      <stop offset="1" stop-color="#0b0d14" stop-opacity="0.85"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#262e47" stroke-width="1" opacity="0.55"/>
+    </pattern>
+    <clipPath id="trainClip">
+      <path d="M656 196 Q656 176 680 172 L1030 172 C1095 172 1140 196 1166 232 C1176 248 1180 264 1180 280 L1180 300 L656 300 Z"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="400" rx="22" fill="url(#bg)"/>
+  <rect width="1200" height="400" rx="22" fill="url(#grid)"/>
+  <rect width="1200" height="8" fill="#ec0016"/>
+
+  <!-- Bahnsteigsign -->
+  <g transform="translate(916 40)">
+    <rect width="224" height="58" rx="7" fill="#ec0016"/>
+    <text x="14" y="23" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="2.6" fill="#ffffff" opacity="0.85">GLEIS 7 · ICE 573</text>
+    <text x="14" y="45" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="1" fill="#ffffff">FRANKFURT → BERLIN</text>
+  </g>
+
+  <!-- Claim -->
+  <rect x="88" y="66" width="5" height="34" rx="2.5" fill="#ec0016"/>
+  <text x="108" y="90" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="700" letter-spacing="4" fill="#8fa0c4">SEATNOW · ZÜGE MVP</text>
+
+  <text x="88" y="168" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="700" fill="#eef1f8">Sitzplätze auf</text>
+  <text x="88" y="228" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="700" fill="#eef1f8">Teilstrecken.</text>
+  <rect x="90" y="248" width="226" height="6" rx="3" fill="#ec0016"/>
+
+  <text x="88" y="292" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" fill="#aab4cc">Deutschland entdecken. Platz am Fenster sichern.</text>
+
+  <!-- Technik-Chips -->
+  <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="10.5" font-weight="700" letter-spacing="1.6" fill="#8fa0c4">
+    <rect x="88" y="314" width="154" height="28" rx="14" fill="#151a2a" stroke="#262e47"/>
+    <text x="106" y="332">GTFS DEUTSCHLAND</text>
+
+    <rect x="252" y="314" width="112" height="28" rx="14" fill="#151a2a" stroke="#262e47"/>
+    <text x="270" y="332">LIVE-DATEN</text>
+
+    <rect x="374" y="314" width="62" height="28" rx="14" fill="#151a2a" stroke="#262e47"/>
+    <text x="391" y="332">SSE</text>
+
+    <rect x="446" y="314" width="86" height="28" rx="14" fill="#151a2a" stroke="#262e47"/>
+    <text x="463" y="332">STRIPE</text>
+  </g>
+
+  <!-- Zug -->
+  <g>
+    <ellipse cx="930" cy="348" rx="280" ry="10" fill="#000000" opacity="0.45"/>
+
+    <!-- Stromabnehmer -->
+    <g stroke="#8fa0c4" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.9">
+      <path d="M862 172 L884 126 L934 126 L908 172"/>
+      <path d="M872 144 L922 144"/>
+    </g>
+
+    <!-- Wagenkasten -->
+    <path d="M656 196 Q656 176 680 172 L1030 172 C1095 172 1140 196 1166 232 C1176 248 1180 264 1180 280 L1180 300 L656 300 Z" fill="url(#body)"/>
+
+    <g clip-path="url(#trainClip)">
+      <!-- Fensterband -->
+      <rect x="682" y="196" width="356" height="44" rx="9" fill="#0d1424"/>
+      <g fill="#eef1f8" opacity="0.16">
+        <rect x="730" y="196" width="3" height="44"/>
+        <rect x="786" y="196" width="3" height="44"/>
+        <rect x="842" y="196" width="3" height="44"/>
+        <rect x="898" y="196" width="3" height="44"/>
+        <rect x="954" y="196" width="3" height="44"/>
+        <rect x="1010" y="196" width="3" height="44"/>
+      </g>
+
+      <!-- Führerstandsfenster -->
+      <path d="M1052 196 L1096 198 C1126 203 1148 218 1163 238 L1163 248 L1052 248 Z" fill="#0d1424"/>
+
+      <!-- Türen -->
+      <rect x="760" y="250" width="2" height="46" fill="#7c8aa6" opacity="0.55"/>
+      <rect x="920" y="250" width="2" height="46" fill="#7c8aa6" opacity="0.55"/>
+
+      <!-- DB-roter Streifen -->
+      <rect x="656" y="256" width="524" height="15" fill="#ec0016"/>
+      <rect x="656" y="271" width="524" height="4" fill="#a80010" opacity="0.7"/>
+
+      <!-- Unterer Wagenkasten -->
+      <rect x="656" y="275" width="524" height="25" fill="#1a2135" opacity="0.18"/>
+
+      <!-- ICE-Schriftzug -->
+      <text x="1096" y="296" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" font-style="italic" letter-spacing="1" fill="#0b0d14" opacity="0.55">ICE</text>
+    </g>
+
+    <!-- Scheinwerfer -->
+    <circle cx="1162" cy="240" r="12" fill="#ffffff" opacity="0.12"/>
+    <circle cx="1162" cy="240" r="7" fill="#ffffff"/>
+    <circle cx="1168" cy="270" r="4.5" fill="#ec0016"/>
+
+    <!-- Dachkante -->
+    <path d="M680 172 L1030 172 C1095 172 1140 196 1166 232" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.65"/>
+
+    <!-- Radsatz -->
+    <g fill="#0b0d14" stroke="#8fa0c4" stroke-width="6">
+      <circle cx="734" cy="310" r="28"/>
+      <circle cx="846" cy="310" r="28"/>
+      <circle cx="1016" cy="310" r="28"/>
+      <circle cx="1120" cy="310" r="28"/>
+    </g>
+    <g fill="#8fa0c4" opacity="0.55">
+      <circle cx="734" cy="310" r="5"/>
+      <circle cx="846" cy="310" r="5"/>
+      <circle cx="1016" cy="310" r="5"/>
+      <circle cx="1120" cy="310" r="5"/>
+    </g>
+  </g>
+
+  <!-- Gleis -->
+  <g>
+    <rect x="0" y="344" width="1200" height="3" fill="#4b5878" opacity="0.75"/>
+    <rect x="0" y="358" width="1200" height="3" fill="#4b5878" opacity="0.75"/>
+    <g fill="#262e47">
+      <rect x="20" y="336" width="8" height="32" rx="2"/>
+      <rect x="60" y="336" width="8" height="32" rx="2"/>
+      <rect x="100" y="336" width="8" height="32" rx="2"/>
+      <rect x="140" y="336" width="8" height="32" rx="2"/>
+      <rect x="180" y="336" width="8" height="32" rx="2"/>
+      <rect x="220" y="336" width="8" height="32" rx="2"/>
+      <rect x="260" y="336" width="8" height="32" rx="2"/>
+      <rect x="300" y="336" width="8" height="32" rx="2"/>
+      <rect x="340" y="336" width="8" height="32" rx="2"/>
+      <rect x="380" y="336" width="8" height="32" rx="2"/>
+      <rect x="420" y="336" width="8" height="32" rx="2"/>
+      <rect x="460" y="336" width="8" height="32" rx="2"/>
+      <rect x="500" y="336" width="8" height="32" rx="2"/>
+      <rect x="540" y="336" width="8" height="32" rx="2"/>
+      <rect x="580" y="336" width="8" height="32" rx="2"/>
+      <rect x="620" y="336" width="8" height="32" rx="2"/>
+      <rect x="660" y="336" width="8" height="32" rx="2"/>
+      <rect x="700" y="336" width="8" height="32" rx="2"/>
+      <rect x="740" y="336" width="8" height="32" rx="2"/>
+      <rect x="780" y="336" width="8" height="32" rx="2"/>
+      <rect x="820" y="336" width="8" height="32" rx="2"/>
+      <rect x="860" y="336" width="8" height="32" rx="2"/>
+      <rect x="900" y="336" width="8" height="32" rx="2"/>
+      <rect x="940" y="336" width="8" height="32" rx="2"/>
+      <rect x="980" y="336" width="8" height="32" rx="2"/>
+      <rect x="1020" y="336" width="8" height="32" rx="2"/>
+      <rect x="1060" y="336" width="8" height="32" rx="2"/>
+      <rect x="1100" y="336" width="8" height="32" rx="2"/>
+      <rect x="1140" y="336" width="8" height="32" rx="2"/>
+      <rect x="1180" y="336" width="8" height="32" rx="2"/>
+    </g>
+  </g>
+
+  <rect y="372" width="1200" height="28" fill="url(#fade)"/>
+</svg>
