@@ -479,11 +479,15 @@ def _search(params: dict[str, Any]) -> list[dict[str, Any]]:
 
     now = dt.datetime.now(BERLIN)
     if date_value == today:
-        start_hour = max(0, now.hour - (4 if mode == "arrival" else 0))
+        if mode == "arrival":
+            start_hour = max(0, now.hour - 4)
+        else:
+            start_hour = max(0, (from_time.hour if from_time else now.hour))
     else:
         start_hour = 0
 
     candidates: list[dict[str, Any]] = []
+    seen_departures: set[tuple[str, str, dt.datetime]] = set()
     for hour in range(start_hour, 24):
         for event in _plan(origin, date_value, hour):
             if event["kind"] != "departure":
@@ -492,11 +496,16 @@ def _search(params: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             if not _path_has(event["path"], destination["name"]):
                 continue
+            identity = (event["category"], event["number"], event["when"])
+            if identity in seen_departures:
+                continue
+            seen_departures.add(identity)
             candidates.append(event)
         if len(candidates) >= MAX_CANDIDATES:
             break
 
     results: list[dict[str, Any]] = []
+    seen_trips: set[str] = set()
     for departure in candidates[:MAX_CANDIDATES]:
         arrival = _find_arrival(destination, origin["name"], departure)
         if not arrival:
@@ -506,7 +515,11 @@ def _search(params: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if to_time and clock > to_time:
             continue
-        results.append(_build_trip(origin, destination, date_value, departure, arrival))
+        trip = _build_trip(origin, destination, date_value, departure, arrival)
+        if trip["id"] in seen_trips:
+            continue
+        seen_trips.add(trip["id"])
+        results.append(trip)
 
     results.sort(key=lambda trip: trip["departureTime"])
     rows = [demo._row(trip) for trip in results[:MAX_RESULTS]]

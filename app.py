@@ -1313,7 +1313,7 @@ def view_search() -> None:
                 "f_origin",
                 "z. B. Frankfurt Hbf",
                 base,
-                help="Mindestens 2 Buchstaben tippen – passende Bahnhöfe erscheinen als Vorschläge.",
+                help="Mindestens 2 Buchstaben tippen und Enter drücken – dann erscheinen passende Bahnhöfe.",
             )
         with c2:
             destination = stop_input(
@@ -1323,6 +1323,11 @@ def view_search() -> None:
                 base,
                 help="Auch Städtenamen wie „Munich“ oder „Koeln“ werden erkannt.",
             )
+        st.caption(
+            ":material/keyboard: Nach dem Tippen **Enter** drücken – dann erscheinen "
+            "die Bahnhofsvorschläge. Du kannst auch direkt suchen: „Hamm“ wird "
+            "automatisch zu „Hamm (Westf) Hbf“."
+        )
 
         c3, c4 = st.columns(2)
         date_kwargs: dict[str, Any] = {}
