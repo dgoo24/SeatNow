@@ -194,7 +194,7 @@ def fetch_stats(base: str) -> dict[str, Any]:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def stop_suggestions(base: str, query: str) -> list[str]:
+def stop_suggestions(base: str, query: str, limit: int = 8) -> list[str]:
     if len(query.strip()) < 2:
         return []
     try:
@@ -202,7 +202,7 @@ def stop_suggestions(base: str, query: str) -> list[str]:
             "GET",
             "/api/trains/stops",
             base=base,
-            params={"q": query.strip(), "limit": 8},
+            params={"q": query.strip(), "limit": limit},
             timeout=15,
         )
         return [item["stopName"] for item in payload if item.get("stopName")]
@@ -640,17 +640,30 @@ def stop_input(
 ) -> str:
     value = st.text_input(label, key=key, placeholder=placeholder, help=help)
     query = (value or "").strip()
-    suggestions = stop_suggestions(base, query)
+    suggestions = stop_suggestions(base, query, limit=50)
     if suggestions and query not in suggestions:
+        shown = suggestions[:12]
         pill_key = f"{key}::suggest::{query.lower()}"
         st.pills(
             "Vorschläge",
-            suggestions,
+            shown,
             key=pill_key,
             on_change=apply_suggestion,
             args=(pill_key, key),
             label_visibility="collapsed",
         )
+        if len(suggestions) > len(shown):
+            with st.expander(
+                f"Weitere passende Bahnhöfe ({len(suggestions) - len(shown)})"
+            ):
+                for name in suggestions[len(shown):]:
+                    if st.button(
+                        name,
+                        key=f"{key}::more::{name}",
+                        width="stretch",
+                    ):
+                        st.session_state[key] = name
+                        st.rerun()
     return query
 
 
@@ -1326,7 +1339,8 @@ def view_search() -> None:
         st.caption(
             ":material/keyboard: Nach dem Tippen **Enter** drücken – dann erscheinen "
             "die Bahnhofsvorschläge. Du kannst auch direkt suchen: „Hamm“ wird "
-            "automatisch zu „Hamm (Westf) Hbf“."
+            "automatisch zu „Hamm (Westf) Hbf“. Es stehen **5.408 Bahnhöfe** zur "
+            "Auswahl – auch kleine Halte (z. B. „Hamm-Heessen“)."
         )
 
         c3, c4 = st.columns(2)
@@ -1419,7 +1433,7 @@ def view_search() -> None:
         unknown: list[str] = []
         for value in (params.get("origin"), params.get("destination")):
             text = str(value or "").strip()
-            if len(text) >= 2 and not stop_suggestions(api_base(), text):
+            if len(text) >= 2 and not stop_suggestions(api_base(), text, limit=50):
                 unknown.append(f"„{text}“")
         if not params.get("origin") or not params.get("destination"):
             st.warning(
