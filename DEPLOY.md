@@ -1,7 +1,44 @@
 # Despliegue real (Render + Streamlit Cloud)
 
-Objetivo: que la app use viajes GTFS reales y deje de mostrar el badge **Demo-Modus**.
+Objetivo: que la app use viajes reales y deje de mostrar el badge **Demo-Modus**.
 Streamlit Cloud solo ejecuta `app.py`; la API Fastify, PostgreSQL y Redis van aparte en Render.
+
+> **Atajo sin Render:** si solo quieres horarios reales, usa el **modo DB API** (sección 0).
+> No hace falta desplegar backend: `db_backend.py` llama a la API de Deutsche Bahn
+> desde el propio proceso de Streamlit. Los asientos y precios siguen siendo simulados.
+
+## 0. Modo DB API (sin backend, 3 minutos)
+
+1. Entra en https://developers.deutschebahn.com y copia el **Client ID** y el **API Key**
+   de tu suscripción a *StaDa v2* y *Timetables v1*.
+2. En https://share.streamlit.io abre la app → **Settings → Secrets** y añade:
+
+   ```toml
+   DB_CLIENT_ID = "tu-client-id"
+   DB_API_KEY = "tu-api-key"
+   ```
+
+3. Guarda y pulsa **Reboot app**.
+
+La app arranca en modo **DB Live** (badge verde). Ventajas y límites:
+
+- Bahnhöfe reales desde StaDa v2 (catálogo `data/db_stations.json`, 5.408 estaciones).
+- Horarios reales desde Timetables v1, con número de tren, hora y andén.
+- Solo **conexiones directas**: la API no ofrece transbordos.
+- El selector de fecha llega solo a **hoy y mañana** (~24 h de horizonte).
+- Asientos, precios, holds y reservas siguen simulados en `demo_backend.py`.
+- La primera búsqueda tarda 10–20 s (consulta el plan por horas); luego queda en caché.
+
+Si más adelante configuras `API_BASE_URL`, ese backend tiene prioridad sobre el modo DB API.
+`SEATNOW_DEMO=1` sigue forzando el modo demo.
+
+Para regenerar el catálogo de estaciones:
+
+```powershell
+$env:DB_CLIENT_ID = "tu-client-id"
+$env:DB_API_KEY = "tu-api-key"
+python tools/fetch_db_stations.py
+```
 
 ## 1. Crear el backend en Render
 
@@ -57,8 +94,10 @@ El modo demo únicamente aparece si la API no responde.
 ## 5. Cómo saber que ya es real
 
 - No se ve el badge naranja **Demo-Modus** ni el aviso **Beispieldaten**.
+- Con DB API se ve el badge verde **DB Live** y aparecen números reales como `ICE 576`.
 - Buscar `Fulda → Frankfurt Hbf` devuelve trenes ICE/RE del feed GTFS.
 - `/api/trains/stats` muestra `lastGtfsIngestedAt` y el proveedor `db-rest` en `realtime`.
+  En modo DB API muestra `stations: 5408`.
 - En Render, los logs muestran `[gtfs]` y `[db] Conectado a PostgreSQL`.
 
 ## Limitaciones del plan gratuito
@@ -76,7 +115,9 @@ salvo que la base se recree.
 
 ## Problemas frecuentes
 
-- **Sigue en Demo-Modus**: falta el secreto `API_BASE_URL`, la URL no es la real o Render aún duerme. Pulsa **Backend verbinden**.
+- **Sigue en Demo-Modus**: falta el secreto `API_BASE_URL` o `DB_CLIENT_ID`/`DB_API_KEY`, la URL no es la real o Render aún duerme. Pulsa **Backend verbinden**.
+- **Badge DB Live pero sin resultados**: la API solo da conexiones directas y ~24 h de horizonte. Prueba un horario cercano, un día válido o estaciones más grandes.
+- **DB API devuelve 401/403**: revisa las claves y que tu suscripción incluya *Timetables v1* y *StaDa v2*.
 - **Error CORS**: `FRONTEND_URL` en Render debe ser exactamente la URL de Streamlit (`https://seatnow-3nx3g79dr4dx5teqsi2fha.streamlit.app`).
 - **La API no arranca**: revisa en logs `[env] Variables de entorno invalidas`; `ADMIN_PASSWORD` y `DATABASE_URL` son obligatorias.
 - **0 resultados de búsqueda**: el feed filtra por fecha/hora; de noche puede no haber más trenes ese día. Prueba otra hora.
@@ -105,4 +146,6 @@ Luego inicia Streamlit con `$env:API_BASE_URL="http://localhost:3100"; streamlit
 - No subas `.env`, contraseñas ni claves al repositorio (es público).
 - `ADMIN_PASSWORD` se guarda como secreto en Render (`sync: false`).
 - `DEMO_PASSWORD` está en `render.yaml` y es pública por diseño; cámbiala si no quieres ese acceso.
-- No se necesitan las credenciales `DB_CLIENT_ID` / `DB_API_KEY` de Deutsche Bahn para este despliegue.
+- `DB_CLIENT_ID` / `DB_API_KEY` van **solo** en los Secrets de Streamlit (o en variables de entorno), nunca en Git.
+  El archivo `.streamlit/secrets.toml` está en `.gitignore`.
+- Si una clave de DB se compartió por error, rótala en el DB API Marketplace.

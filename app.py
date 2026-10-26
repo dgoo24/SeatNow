@@ -11,10 +11,13 @@ from zoneinfo import ZoneInfo
 import requests
 import streamlit as st
 
+import db_backend
 import demo_backend
 
 DEFAULT_API_BASE = os.environ.get("API_BASE_URL", "http://localhost:3000").rstrip("/")
 DEMO_BASE = "demo://seatnow"
+DB_BASE = "dbapi://seatnow"
+DB_HORIZON_DAYS = 1
 BERLIN = ZoneInfo("Europe/Berlin")
 DIALOG_TIMEOUT = (5, 90)
 
@@ -76,7 +79,11 @@ def api_origin() -> str:
 
 
 def api_base() -> str:
-    return DEMO_BASE if st.session_state.get("demo_mode") else api_origin()
+    if st.session_state.get("demo_mode"):
+        return DEMO_BASE
+    if st.session_state.get("db_mode"):
+        return DB_BASE
+    return api_origin()
 
 
 def request_json(
@@ -87,9 +94,10 @@ def request_json(
     params: dict[str, Any] | None = None,
     timeout: Any = DIALOG_TIMEOUT,
 ) -> Any:
-    if base == DEMO_BASE:
+    if base in (DEMO_BASE, DB_BASE):
+        module = db_backend if base == DB_BASE else demo_backend
         try:
-            return demo_backend.handle(method, path, params=params)
+            return module.handle(method, path, params=params)
         except demo_backend.DemoError as exc:
             raise ApiError(str(exc), exc.status, exc.code) from exc
     response = requests.request(method, f"{base}{path}", params=params, timeout=timeout)
@@ -100,7 +108,11 @@ def request_json(
 
 
 def ensure_backend() -> None:
-    if st.session_state.get("demo_mode") or st.session_state.get("backend_checked"):
+    if (
+        st.session_state.get("demo_mode")
+        or st.session_state.get("db_mode")
+        or st.session_state.get("backend_checked")
+    ):
         return
     st.session_state.backend_checked = True
     timeout = (5, 75) if st.session_state.get("api_configured") else (3, 6)
@@ -128,9 +140,10 @@ def api(
 ) -> Any:
     base = (base or api_base()).rstrip("/")
     token = st.session_state.get("token") if auth else None
-    if base == DEMO_BASE:
+    if base in (DEMO_BASE, DB_BASE):
+        module = db_backend if base == DB_BASE else demo_backend
         try:
-            return demo_backend.handle(
+            return module.handle(
                 method,
                 path,
                 params=kwargs.get("params"),
@@ -365,7 +378,16 @@ def fmt_datetime(value: Any) -> str:
 def hhmm(value: Any, mark_next_day: bool = False) -> str:
     if not value:
         return "--:--"
-    parts = str(value).split(":")
+    text = str(value)
+    if "T" in text:
+        try:
+            parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        return parsed.astimezone(BERLIN).strftime("%H:%M")
+    parts = text.split(":")
     try:
         hours = int(parts[0])
     except ValueError:
@@ -442,6 +464,17 @@ def seconds_left(value: Any) -> int:
     return max(0, int((parsed - dt.datetime.now(dt.timezone.utc)).total_seconds()))
 
 
+def _secret_value(name: str) -> str | None:
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        value = None
+    text = str(value).strip() if value else ""
+    if not text:
+        text = (os.environ.get(name) or "").strip()
+    return text or None
+
+
 def _secret_api_base() -> str | None:
     try:
         value = st.secrets.get("API_BASE_URL")
@@ -452,9 +485,17 @@ def _secret_api_base() -> str | None:
 
 def init_state() -> None:
     secret_base = _secret_api_base()
+    env_base = (os.environ.get("API_BASE_URL") or "").strip() or None
+    configured_base = secret_base or env_base
+    db_client_id = _secret_value("DB_CLIENT_ID")
+    db_api_key = _secret_value("DB_API_KEY")
+    db_ready = bool(db_client_id and db_api_key) and not configured_base
+    if db_ready:
+        db_backend.configure(db_client_id, db_api_key, _secret_value("DB_MARKETPLACE_URL"))
     defaults: dict[str, Any] = {
-        "api_base": secret_base or DEFAULT_API_BASE,
-        "api_configured": bool(secret_base or os.environ.get("API_BASE_URL")),
+        "api_base": configured_base or DEFAULT_API_BASE,
+        "api_configured": bool(configured_base),
+        "db_mode": db_ready and os.environ.get("SEATNOW_DEMO") != "1",
         "demo_mode": os.environ.get("SEATNOW_DEMO") == "1",
         "backend_checked": False,
         "page": "Suche",
@@ -475,6 +516,15 @@ def init_state() -> None:
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+    if st.session_state.get("db_mode"):
+        today = dt.datetime.now(BERLIN).date()
+        current = st.session_state.get("f_date")
+        if (
+            not isinstance(current, dt.date)
+            or current < today
+            or current > today + dt.timedelta(days=DB_HORIZON_DAYS)
+        ):
+            st.session_state.f_date = today
 
 
 def clear_auth() -> None:
@@ -564,6 +614,7 @@ def reset_search() -> None:
     st.session_state.search_params = None
     st.session_state.results = []
     st.session_state.searched = False
+    st.session_state.search_notice = None
     st.session_state.trip_ctx = None
     st.session_state.hold = None
     st.session_state.ticket = None
@@ -652,6 +703,7 @@ def do_search(
     if not origin and not destination:
         st.session_state.results = []
         st.session_state.search_params = {"date": date_value.isoformat()}
+        st.session_state.search_notice = None
         st.session_state.searched = True
         st.session_state.hold = None
         st.session_state.ticket = None
@@ -675,10 +727,19 @@ def do_search(
         try:
             rows = fetch_search(api_base(), params)
         except (requests.RequestException, ApiError) as exc:
-            report_error(ApiError(f"Backend nicht erreichbar ({api_base()}): {exc}"))
+            if isinstance(exc, ApiError) and exc.code == "NO_DATA":
+                st.session_state.results = []
+                st.session_state.search_params = params
+                st.session_state.search_notice = str(exc)
+                st.session_state.searched = True
+                st.session_state.hold = None
+                st.session_state.ticket = None
+            else:
+                report_error(ApiError(f"Backend nicht erreichbar ({api_base()}): {exc}"))
             return
     st.session_state.results = rows
     st.session_state.search_params = params
+    st.session_state.search_notice = None
     st.session_state.searched = True
     st.session_state.hold = None
     st.session_state.ticket = None
@@ -1178,11 +1239,18 @@ def render_search_steps() -> None:
 
 def render_examples() -> None:
     st.caption("Schnellstart mit einer Beispielstrecke")
-    examples = [
-        ("Fulda", "Frankfurt Hbf"),
-        ("Frankfurt Hbf", "Berlin Hbf"),
-        ("Köln Hbf", "München Hbf"),
-    ]
+    if st.session_state.get("db_mode"):
+        examples = [
+            ("Frankfurt Hbf", "Hamburg Hbf"),
+            ("München Hbf", "Berlin Hbf"),
+            ("Köln Hbf", "Berlin Hbf"),
+        ]
+    else:
+        examples = [
+            ("Fulda", "Frankfurt Hbf"),
+            ("Frankfurt Hbf", "Berlin Hbf"),
+            ("Köln Hbf", "München Hbf"),
+        ]
     with st.container(horizontal=True):
         for origin, destination in examples:
             st.button(
@@ -1221,11 +1289,18 @@ def render_glossary() -> None:
 
 def view_search() -> None:
     base = api_base()
+    db_mode = bool(st.session_state.get("db_mode"))
     st.subheader(":material/train: Verbindung suchen")
-    st.caption(
-        "Sitzplätze auf Teilstrecken mit Live-Daten der Deutschen Bahn. "
-        "Aliasse wie „Munich“, „Koeln“ oder „Freiburg im Breisgau“ funktionieren."
-    )
+    if db_mode:
+        st.caption(
+            "Echte Fahrpläne der Deutschen Bahn (DB API Marketplace) für direkte "
+            "Verbindungen. Sitzplätze und Preise sind simuliert."
+        )
+    else:
+        st.caption(
+            "Sitzplätze auf Teilstrecken mit Live-Daten der Deutschen Bahn. "
+            "Aliasse wie „Munich“, „Koeln“ oder „Freiburg im Breisgau“ funktionieren."
+        )
     render_examples()
 
     with st.container(border=True):
@@ -1250,10 +1325,18 @@ def view_search() -> None:
             )
 
         c3, c4 = st.columns(2)
+        date_kwargs: dict[str, Any] = {}
+        if db_mode:
+            today = dt.datetime.now(BERLIN).date()
+            date_kwargs = {
+                "min_value": today,
+                "max_value": today + dt.timedelta(days=DB_HORIZON_DAYS),
+            }
         date_value = c3.date_input(
             "Datum",
             key="f_date",
             help="Für welchen Tag möchtest du fahren?",
+            **date_kwargs,
         )
         time_mode = c4.segmented_control(
             "Zeitfilter",
@@ -1277,6 +1360,13 @@ def view_search() -> None:
             key="f_time_to",
             help="Leer lassen, wenn du den ganzen Tag sehen möchtest.",
         )
+
+        if db_mode:
+            st.caption(
+                ":material/info: Die DB-API liefert Fahrpläne nur für heute und die "
+                "nächsten ~24 Stunden und nur **direkte** Verbindungen (kein Umstieg). "
+                "Sitzplätze und Preise sind simuliert."
+            )
 
         search_clicked = st.button(
             "Verbindungen suchen",
@@ -1315,7 +1405,12 @@ def view_search() -> None:
         render_glossary()
         return
     if not results:
+        notice = st.session_state.pop("search_notice", None)
         params = st.session_state.get("search_params") or {}
+        if notice:
+            st.warning(notice)
+            render_glossary()
+            return
         unknown: list[str] = []
         for value in (params.get("origin"), params.get("destination")):
             text = str(value or "").strip()
@@ -1338,11 +1433,24 @@ def view_search() -> None:
                 "Bitte wähle einen Vorschlag aus der Liste oder einen größeren Bahnhof."
             )
         else:
-            st.warning(
-                "Keine Verbindungen gefunden. Prüfe die Schreibweise der Bahnhöfe, "
-                "wähle einen größeren Bahnhof oder ändere Uhrzeit und Datum."
+            if db_mode:
+                st.warning(
+                    "Keine **direkte** Verbindung gefunden. Die DB-API liefert nur "
+                    "Direktverbindungen – versuche größere Bahnhöfe (z. B. „Berlin Hbf“, "
+                    "„Köln Hbf“), eine andere Uhrzeit oder einen anderen Tag."
+                )
+            else:
+                st.warning(
+                    "Keine Verbindungen gefunden. Prüfe die Schreibweise der Bahnhöfe, "
+                    "wähle einen größeren Bahnhof oder ändere Uhrzeit und Datum."
+                )
+        if db_mode:
+            st.caption(
+                "Tipp: „Frankfurt Hbf → Hamburg Hbf“ oder „München Hbf → Berlin Hbf“ "
+                "haben fast immer direkte Züge."
             )
-        st.caption("Tipp: „Fulda → Frankfurt Hbf“ funktioniert immer als Teststrecke.")
+        else:
+            st.caption("Tipp: „Fulda → Frankfurt Hbf“ funktioniert immer als Teststrecke.")
         render_glossary()
         return
 
@@ -1675,6 +1783,11 @@ def render_header() -> None:
                         width="stretch",
                         help="Prüft die Verbindung zur konfigurierten API erneut.",
                     )
+                elif st.session_state.get("db_mode"):
+                    st.badge("DB Live", color="green", icon=":material/database:")
+                    st.caption(
+                        "Fahrplan: DB API Marketplace · Sitze & Preise simuliert"
+                    )
                 else:
                     st.badge("API online", color="green", icon=":material/cloud_done:")
                     st.caption(
@@ -1706,12 +1819,21 @@ def render_nav() -> None:
             st.caption("Systemdaten nicht verfügbar.")
         else:
             with st.container(horizontal=True, horizontal_alignment="right", gap="small"):
-                st.badge(f"{fmt_int(stats.get('trips'))} Fahrten", color="gray")
-                st.badge(f"{fmt_int(stats.get('segments'))} Teilstrecken", color="gray")
-                st.badge(f"{fmt_int(stats.get('seats'))} Sitze", color="gray")
-                if stats.get("lastGtfsIngestedAt"):
-                    imported = fmt_datetime(stats["lastGtfsIngestedAt"]).split(" ")[0]
-                    st.badge(f"GTFS-Import {imported}", color="gray")
+                if st.session_state.get("db_mode"):
+                    st.badge(
+                        f"{fmt_int(stats.get('stations'))} Bahnhöfe",
+                        color="gray",
+                        icon=":material/database:",
+                    )
+                    st.badge("Fahrplan: DB API", color="gray")
+                    st.badge("Sitze simuliert", color="gray")
+                else:
+                    st.badge(f"{fmt_int(stats.get('trips'))} Fahrten", color="gray")
+                    st.badge(f"{fmt_int(stats.get('segments'))} Teilstrecken", color="gray")
+                    st.badge(f"{fmt_int(stats.get('seats'))} Sitze", color="gray")
+                    if stats.get("lastGtfsIngestedAt"):
+                        imported = fmt_datetime(stats["lastGtfsIngestedAt"]).split(" ")[0]
+                        st.badge(f"GTFS-Import {imported}", color="gray")
     hint = PAGE_HINTS.get(st.session_state.get("page") or "Suche")
     if hint:
         st.caption(f":material/lightbulb: {hint}")

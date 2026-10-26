@@ -161,6 +161,35 @@ Die App ist damit gleichzeitig:
 - Ein oranges Badge **Demo-Modus** zeigt ehrlich an: Hier fahren Beispieldaten.
 - Der Button **Backend verbinden** prüft die konfigurierte API erneut.
 
+### 🗄️ DB-API-Modus – echte Fahrpläne ohne eigenes Backend
+
+Mit Zugangsdaten aus dem [DB API Marketplace](https://developers.deutschebahn.com/) holt die App echte Bahnhöfe und Fahrpläne direkt in den Streamlit-Prozess:
+
+- **`db_backend.py`** bildet dieselbe `handle()`-Schnittstelle wie `demo_backend.py` ab.
+- **StaDa v2** liefert den Bahnhofskatalog. Er liegt einmalig heruntergeladen in `data/db_stations.json` (5.408 Bahnhöfe) und wird für Vorschläge und GPS genutzt.
+- **Timetables v1** liefert den Soll-Fahrplan je Bahnhof und Stunde; daraus entstehen echte Zugnummern, Abfahrten und Ankünfte.
+- Ein grünes Badge **DB Live** zeigt den Modus an.
+- **Nur Direktverbindungen:** Die API liefert keine Umstiegsrouting – die App sucht Züge, die Start und Ziel ohne Umstieg bedienen.
+- **Fahrplanhorizont ~24 Stunden:** Mehr als heute und morgen liefert die API nicht; der Datumswähler ist entsprechend begrenzt.
+- **Sitze, Preise und Buchungen bleiben simuliert**, weil die DB API weder Sitzplatzverfügbarkeit noch Tarife veröffentlicht. Login, Hold, Checkout und Check-in laufen unverändert über `demo_backend.py`.
+
+Voraussetzung sind zwei Streamlit-Secrets (oder Umgebungsvariablen):
+
+```toml
+DB_CLIENT_ID = "deine-client-id"
+DB_API_KEY = "dein-api-key"
+```
+
+Priorität: `API_BASE_URL` (eigenes Backend) → DB-API-Modus → Demo-Modus. Mit `SEATNOW_DEMO=1` lässt sich der Demo-Modus erzwingen.
+
+Den Bahnhofskatalog aktualisierst du bei Bedarf neu:
+
+```powershell
+$env:DB_CLIENT_ID = "…"
+$env:DB_API_KEY = "…"
+python tools/fetch_db_stations.py
+```
+
 ---
 
 <a name="reise"></a>
@@ -210,6 +239,8 @@ flowchart LR
     U["Reisende:r<br/>Browser"] --> FE["Streamlit-Frontend<br/>app.py · Deutsch"]
     FE -->|"REST / JSON"| API["Fastify-API<br/>TypeScript · modularer Monolith"]
     FE -.->|"API nicht erreichbar"| DEMO["demo_backend.py<br/>In-Memory-Demo"]
+    FE -.->|"DB_CLIENT_ID + DB_API_KEY"| DBA["db_backend.py<br/>DB-API-Modus"]
+    DBA -->|"StaDa v2 · Timetables v1"| DBAPI["DB API Marketplace<br/>developers.deutschebahn.com"]
 
     GTFS["GTFS Deutschland<br/>gtfs.de ZIP"] -->|"Import"| API
     RT["DB Live-Daten<br/>bahn.de / db-rest"] -->|"Abfahrten, Verspätungen"| API
@@ -314,6 +345,30 @@ Dann öffnest du <http://localhost:8501>. Oben rechts findest du die vorausgefü
 > [!TIP]
 > Der Button **Demo-Anmeldung** füllt die Zugangsdaten aus. Der Demo-Modus wird **nicht** dadurch aktiviert, sondern nur dann, wenn die API nicht erreichbar ist. Mit `SEATNOW_DEMO=1` kannst du ihn erzwingen.
 
+### Variante A2 · Echte DB-Fahrpläne ohne Backend (DB-API-Modus)
+
+Wenn du Zugangsdaten aus dem DB API Marketplace hast, brauchst du weder Render noch Docker:
+
+```powershell
+# 1. Secrets für Streamlit anlegen
+New-Item -ItemType Directory -Force .streamlit | Out-Null
+@"
+DB_CLIENT_ID = "deine-client-id"
+DB_API_KEY = "dein-api-key"
+"@ | Set-Content .streamlit/secrets.toml
+
+# 2. App starten
+streamlit run app.py
+```
+
+Unter macOS/Linux genauso, nur mit `export DB_CLIENT_ID=…` und `export DB_API_KEY=…`.
+Oben erscheint dann das grüne Badge **DB Live**, und die Suche liefert echte Zugnummern und Zeiten.
+
+> [!IMPORTANT]
+> `.streamlit/secrets.toml` ist in `.gitignore`. Committe diese Datei nie.
+> Der Datumswähler ist im DB-API-Modus auf heute und morgen begrenzt, weil die
+> Timetables-API nur etwa 24 Stunden im Voraus liefert.
+
 ### Variante B · Kompletter Stack (echte API, PostgreSQL, Redis)
 
 **Voraussetzungen:** Python 3.11+, Node.js 20+, Docker Desktop.
@@ -387,13 +442,26 @@ Der Fastify-Server liefert unter <http://localhost:3000/> eine eigenständige Si
 | Variable | Wo? | Bedeutung |
 |---|---|---|
 | `API_BASE_URL` | Umgebung (`$env:` / `export`) oder Streamlit-Secret | URL der Fastify-API, z. B. `http://localhost:3000` |
+| `DB_CLIENT_ID` | Streamlit-Secret oder Umgebung | Client-ID aus dem DB API Marketplace (aktiviert den DB-API-Modus) |
+| `DB_API_KEY` | Streamlit-Secret oder Umgebung | API-Key aus dem DB API Marketplace |
+| `DB_MARKETPLACE_URL` | Optional | Andere Basis-URL der Marketplace-API |
 | `SEATNOW_DEMO` | Umgebung | `1` erzwingt den Demo-Modus, auch wenn die API läuft |
 
-Für Streamlit Cloud legst du den Wert unter **Settings → Secrets** ab:
+Für Streamlit Cloud legst du die Werte unter **Settings → Secrets** ab. Entweder die eigene API:
 
 ```toml
 API_BASE_URL = "https://deine-api.onrender.com"
 ```
+
+oder direkt die DB API (kein eigenes Backend nötig):
+
+```toml
+DB_CLIENT_ID = "deine-client-id"
+DB_API_KEY = "dein-api-key"
+```
+
+> [!WARNING]
+> Secrets gehören **nicht** ins Repository. Wenn ein Key versehentlich geteilt wurde, rotiere ihn im DB API Marketplace.
 
 ### Backend – Kern
 
@@ -637,10 +705,17 @@ Beim ersten Start erledigt das Entrypoint-Skript automatisch:
 ### Streamlit Cloud
 
 1. Repository mit Streamlit verbinden.
-2. Unter **Settings → Secrets** eintragen:
+2. Unter **Settings → Secrets** eintragen – entweder die eigene API:
 
    ```toml
    API_BASE_URL = "https://deine-api.onrender.com"
+   ```
+
+   oder direkt die DB API (dann ist kein Render-Backend nötig):
+
+   ```toml
+   DB_CLIENT_ID = "deine-client-id"
+   DB_API_KEY = "dein-api-key"
    ```
 
 3. App neu starten (**Reboot app**).
@@ -648,8 +723,9 @@ Beim ersten Start erledigt das Entrypoint-Skript automatisch:
 ### Woran du erkennst, dass es „echt“ läuft
 
 - Kein oranges **Demo-Modus**-Badge.
-- `/health` antwortet mit `status: "ok"`.
-- `/api/trains/stats` zeigt `trips > 0` und `lastGtfsIngestedAt`.
+- Im DB-API-Modus ein grünes **DB Live**-Badge und echte Zugnummern wie `ICE 576`.
+- `/health` antwortet mit `status: "ok"` (bzw. `mode: "db-api"`).
+- `/api/trains/stats` zeigt `trips > 0` und `lastGtfsIngestedAt` – im DB-API-Modus stattdessen `stations: 5408`.
 - Die Suche `Fulda → Frankfurt Hbf` liefert ICE/RE-Verbindungen.
 - Die Live-Anzeige nennt einen Provider wie `db-rest`.
 
@@ -669,6 +745,11 @@ Beim ersten Start erledigt das Entrypoint-Skript automatisch:
 .
 ├── app.py                      # Streamlit-Frontend (deutsch, dunkles Bahn-Theme)
 ├── demo_backend.py             # Offline-Demo: komplette API im Arbeitsspeicher
+├── db_backend.py               # DB-API-Modus: echte Fahrpläne ohne eigenes Backend
+├── data/
+│   └── db_stations.json        # Bahnhofskatalog aus StaDa v2 (5.408 Bahnhöfe)
+├── tools/
+│   └── fetch_db_stations.py    # Katalog neu aus der DB API laden
 ├── requirements.txt            # streamlit, requests
 ├── .streamlit/
 │   └── config.toml             # Farben, Fonts und Dark Theme
@@ -813,7 +894,19 @@ Für einen echten Produktivbetrieb fehlen unter anderem: Rate Limiting, CSRF-Sch
 <details>
 <summary><strong>Warum sehe ich „Demo-Modus“ und keine echten Züge?</strong></summary>
 
-Die App konnte die API unter `API_BASE_URL` nicht erreichen. Prüfe, ob das Backend läuft, ob die URL stimmt und ob Render eventuell gerade aus dem Kaltstart hochfährt. Mit **Backend verbinden** wird erneut geprüft.
+Die App konnte weder die API unter `API_BASE_URL` noch die DB API erreichen. Prüfe, ob das Backend läuft, ob die URL stimmt und ob Render eventuell gerade aus dem Kaltstart hochfährt. Mit **Backend verbinden** wird erneut geprüft. Für echte DB-Fahrpläne ohne Backend hinterlege `DB_CLIENT_ID` und `DB_API_KEY` als Secrets – dann erscheint **DB Live**.
+</details>
+
+<details>
+<summary><strong>Warum finde ich im DB-API-Modus keine Verbindung mit Umstieg?</strong></summary>
+
+Die Timetables-API liefert nur Fahrpläne je Bahnhof, kein Umstiegsrouting. Die App zeigt deshalb ausschließlich **Direktverbindungen** – Züge, die Start und Ziel ohne Umstieg bedienen. Für Relationen ohne direkten Zug (z. B. `Frankfurt Hbf → Berlin Hbf` tagsüber) hilft ein größerer Start- oder Zielbahnhof oder eine andere Uhrzeit.
+</details>
+
+<details>
+<summary><strong>Warum reicht der Datumswähler im DB-API-Modus nur bis morgen?</strong></summary>
+
+Die Timetables-API veröffentlicht den Soll-Fahrplan nur etwa 24 Stunden im Voraus. Für spätere Tage antwortet sie mit HTTP 404. Die App begrenzt den Wähler entsprechend und zeigt außerhalb des Horizonts einen klaren Hinweis statt leerer Ergebnisse.
 </details>
 
 <details>
