@@ -85,10 +85,20 @@ _ALIASES = {
     "freiburg": "Freiburg(Breisgau) Hbf",
     "freiburg hbf": "Freiburg(Breisgau) Hbf",
     "freiburg breisgau hbf": "Freiburg(Breisgau) Hbf",
+    "freiburg breisgau": "Freiburg(Breisgau) Hbf",
+    "freiburg im breisgau": "Freiburg(Breisgau) Hbf",
     "halle": "Halle(Saale)Hbf",
     "muenster": "Münster(Westf)Hbf",
     "kassel": "Kassel-Wilhelmshöhe",
     "cologne central": "Köln Hbf",
+    "dusseldorf": "Düsseldorf Hbf",
+    "koln": "Köln Hbf",
+    "munster": "Münster(Westf)Hbf",
+    "gottingen": "Göttingen",
+    "lubeck": "Lübeck Hbf",
+    "saarbrucken": "Saarbrücken Hbf",
+    "wurzburg": "Würzburg Hbf",
+    "nurnberg": "Nürnberg Hbf",
 }
 
 _SLOTS = [
@@ -149,20 +159,75 @@ def _seed(*parts: Any) -> int:
     return int(hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8], 16)
 
 
+def _fold(value: Any) -> str:
+    """Faltet Umlaute weg, damit auch 'Dusseldorf' oder 'Munchen' passt."""
+    text = str(value or "").strip().lower()
+    for source, target in (("ä", "a"), ("ö", "o"), ("ü", "u"), ("ß", "ss")):
+        text = text.replace(source, target)
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+_STOP_WORDS = {
+    "hbf",
+    "hauptbahnhof",
+    "bahnhof",
+    "bf",
+    "central",
+    "main",
+    "im",
+    "am",
+    "an",
+    "bei",
+    "der",
+    "die",
+    "das",
+}
+
+
+def _stop_tokens(value: Any) -> set[str]:
+    return {token for token in _fold(value).split() if token not in _STOP_WORDS}
+
+
+def _stop_score(value: Any, display: str) -> int | None:
+    """Kleiner ist besser. None bedeutet: passt nicht zusammen."""
+    key = _key(value)
+    display_key = _key(display)
+    if not key:
+        return None
+    if key == display_key:
+        return 0
+    if display_key.startswith(key) or key.startswith(display_key):
+        return 1
+    if key in display_key or display_key in key:
+        return 2
+    folded = _fold(value)
+    display_folded = _fold(display)
+    if folded == display_folded:
+        return 1
+    if folded in display_folded or display_folded in folded:
+        return 3
+    wanted = _stop_tokens(value)
+    available = _stop_tokens(display)
+    if wanted and (wanted <= available or available <= wanted):
+        return 4 + len(wanted ^ available)
+    return None
+
+
 def _find_stop(value: Any) -> str | None:
     key = _key(value)
     if not key:
         return None
     if key in _ALIASES:
         return _ALIASES[key]
-    for display in STATIONS:
-        if _key(display) == key:
-            return display
-    for display in STATIONS:
-        display_key = _key(display)
-        if key in display_key or display_key in key:
-            return display
-    return None
+    best: tuple[int, int, str] | None = None
+    for index, display in enumerate(STATIONS):
+        score = _stop_score(value, display)
+        if score is None:
+            continue
+        candidate = (score, index, display)
+        if best is None or candidate < best:
+            best = candidate
+    return best[2] if best else None
 
 
 def _by_code(code: str) -> str | None:
@@ -548,12 +613,16 @@ def _stops(params: dict[str, Any]) -> list[dict[str, Any]]:
         for alias, display in _ALIASES.items():
             if query in alias and display not in names:
                 names.append(display)
-        for display in STATIONS:
-            if query in _key(display) and display not in names:
+        scored: list[tuple[int, int, str]] = []
+        for index, display in enumerate(STATIONS):
+            score = _stop_score(params.get("q"), display)
+            if score is not None:
+                scored.append((score, index, display))
+        for _, _, display in sorted(scored):
+            if display not in names:
                 names.append(display)
     else:
         names = list(STATIONS)
-    names.sort(key=lambda name: (not _key(name).startswith(query), name))
     return [{"stopName": name} for name in names[:limit]]
 
 

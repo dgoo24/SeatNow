@@ -647,6 +647,17 @@ def do_search(
     time_from: dt.time | None,
     time_to: dt.time | None,
 ) -> None:
+    origin = (origin or "").strip()
+    destination = (destination or "").strip()
+    if not origin and not destination:
+        st.session_state.results = []
+        st.session_state.search_params = {"date": date_value.isoformat()}
+        st.session_state.searched = True
+        st.session_state.hold = None
+        st.session_state.ticket = None
+        flash("warn", "Bitte wähle Start und Ziel – oder nutze eine Beispielstrecke.")
+        return
+
     params: dict[str, Any] = {
         "date": date_value.isoformat(),
         "limit": 20,
@@ -1304,10 +1315,28 @@ def view_search() -> None:
         render_glossary()
         return
     if not results:
-        st.warning(
-            "Keine Verbindungen gefunden. Prüfe die Schreibweise der Bahnhöfe, "
-            "wähle einen größeren Bahnhof oder ändere Uhrzeit und Datum."
-        )
+        params = st.session_state.get("search_params") or {}
+        unknown: list[str] = []
+        for value in (params.get("origin"), params.get("destination")):
+            text = str(value or "").strip()
+            if len(text) >= 2 and not stop_suggestions(api_base(), text):
+                unknown.append(f"„{text}“")
+        if not params.get("origin") and not params.get("destination"):
+            st.warning(
+                "Bitte wähle Start und Ziel. Nutze die Vorschläge beim Tippen "
+                "oder klicke oben auf eine Beispielstrecke."
+            )
+        elif unknown:
+            st.warning(
+                f"Diese Bahnhöfe wurden nicht erkannt: {', '.join(unknown)}. "
+                "Bitte wähle einen Vorschlag aus der Liste oder einen größeren Bahnhof."
+            )
+        else:
+            st.warning(
+                "Keine Verbindungen gefunden. Prüfe die Schreibweise der Bahnhöfe, "
+                "wähle einen größeren Bahnhof oder ändere Uhrzeit und Datum."
+            )
+        st.caption("Tipp: „Fulda → Frankfurt Hbf“ funktioniert immer als Teststrecke.")
         render_glossary()
         return
 
